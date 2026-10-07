@@ -459,30 +459,30 @@ def _auto_warehouse(w, hint: str | None = None) -> tuple[str | None, str]:
     Returns (None, "") when multiple warehouses exist and none match history.
     """
     try:
-        running = [wh for wh in w.warehouses.list()
-                   if (wh.state.value if wh.state else "") == "RUNNING"]
+        all_wh = list(w.warehouses.list())
     except Exception:
         return None, ""
 
-    if not running:
+    if not all_wh:
         return None, ""
-    if len(running) == 1:
-        return str(running[0].id), f"auto ({running[0].name or running[0].id})"
+    if len(all_wh) == 1:
+        wh = all_wh[0]
+        return str(wh.id), f"auto ({wh.name or wh.id})"
 
     # Multiple warehouses — check query history for the hint
     if hint:
         try:
             from collections import Counter
-            resp   = w.query_history.list()
-            counts = Counter()
-            hint_l = hint.lower()
-            running_ids = {str(wh.id): wh.name or str(wh.id) for wh in running}
+            resp    = w.query_history.list()
+            counts  = Counter()
+            hint_l  = hint.lower()
+            wh_map  = {str(wh.id): wh.name or str(wh.id) for wh in all_wh}
             for q in (resp.res or []):
-                if hint_l in (q.query_text or "").lower() and q.warehouse_id in running_ids:
+                if hint_l in (q.query_text or "").lower() and q.warehouse_id in wh_map:
                     counts[q.warehouse_id] += 1
             if counts:
                 best_id = counts.most_common(1)[0][0]
-                return best_id, f"history match ({running_ids[best_id]}, {counts[best_id]} queries)"
+                return best_id, f"history match ({wh_map[best_id]}, {counts[best_id]} queries)"
         except Exception:
             pass
 
