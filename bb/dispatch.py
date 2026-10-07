@@ -55,13 +55,19 @@ def dispatch(argv: list):
         console.print(f"[yellow]'{category} {command}' not yet implemented[/yellow]")
         return
 
-    w    = make_client(active_profile,
-                       override_host=flags.get("host"),
-                       override_token=flags.get("token"))
-    conn = get_db(active_profile)
+    w        = make_client(active_profile,
+                           override_host=flags.get("host"),
+                           override_token=flags.get("token"))
+    conn     = get_db(active_profile)
+    out_path = flags.get("output")
+    if out_path:
+        console.begin_output(out_path)
     try:
         fn(w, conn, active_profile, flags)
     except KeyboardInterrupt:
         console.print("\n[dim]interrupted[/dim]")
     finally:
+        if out_path:
+            console.end_output()
+            console.print(f"  [green]Saved to {out_path}[/green]")
         conn.close()

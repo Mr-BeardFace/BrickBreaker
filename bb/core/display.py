@@ -7,8 +7,45 @@ from rich.panel import Panel
 from rich.table import Table
 
 import io, sys
-console = Console(file=io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-                  if hasattr(sys.stdout, "buffer") else sys.stdout)
+
+
+class _TeeConsole:
+    """Wraps a Rich Console and optionally tees output to a plain-text file."""
+
+    def __init__(self, term_console: Console):
+        self._term = term_console
+        self._file = None
+        self._file_con = None
+
+    def begin_output(self, path: str):
+        self._file = open(path, "w", encoding="utf-8")
+        self._file_con = Console(file=self._file, no_color=True, highlight=False,
+                                 width=200)
+
+    def end_output(self):
+        if self._file_con:
+            self._file_con = None
+        if self._file:
+            self._file.close()
+            self._file = None
+
+    def print(self, *args, **kwargs):
+        self._term.print(*args, **kwargs)
+        if self._file_con:
+            self._file_con.print(*args, **kwargs)
+
+    def rule(self, *args, **kwargs):
+        self._term.rule(*args, **kwargs)
+        if self._file_con:
+            self._file_con.rule(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._term, name)
+
+
+_term = Console(file=io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+                if hasattr(sys.stdout, "buffer") else sys.stdout)
+console = _TeeConsole(_term)
 
 VERSION   = "0.1.0"
 TOOL_NAME = "BrickBreaker"
@@ -97,7 +134,7 @@ def show_module_info(category: str, command: str):
         lines += ["", "  [magenta]--aggressive unlocks[/magenta]"]
         lines += [f"    [magenta]→[/magenta] {a}" for a in m["aggressive"]]
 
-    lines += ["", "  [dim]Add --run to execute  ·  --cached (skip API)  ·  --fresh (force pull)[/dim]"]
+    lines += ["", "  [dim]Add --run to execute  ·  --cached  ·  --fresh  ·  --extended  ·  --output <file>[/dim]"]
 
     console.print(Panel(
         "\n".join(lines),

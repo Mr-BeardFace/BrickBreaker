@@ -35,7 +35,7 @@ def run_whoami(w, conn, profile, flags):
         console.print(f"[red]Error: {e}[/red]")
 
 
-def _display_users_table(rows, age: str):
+def _display_users_table(rows, age: str, extended: bool = False):
     console.print(f"\n[bold]Users[/bold]  [dim](cached {age})[/dim]\n")
     t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
     t.add_column("Username",     style="cyan")
@@ -48,7 +48,10 @@ def _display_users_table(rows, age: str):
             grps = json.loads(r["groups_json"] or "[]")
         except Exception:
             grps = []
-        g_str = ", ".join(grps[:3]) + ("..." if len(grps) > 3 else "")
+        if extended:
+            g_str = ", ".join(grps)
+        else:
+            g_str = ", ".join(grps[:3]) + (f"  [dim]+{len(grps)-3} more[/dim]" if len(grps) > 3 else "")
         t.add_row(r["user_name"] or "?", r["display_name"] or "?",
                   r["email"] or "?", g_str,
                   "[red]Yes[/red]" if r["is_admin"] else "")
@@ -61,9 +64,10 @@ def run_users(w, conn, profile, flags):
     if use_cache is None:
         console.print("[yellow]No cached data — run without --cached to pull[/yellow]")
         return
+    extended = flags.get("extended", False)
     if use_cache:
         rows = conn.execute("SELECT * FROM users ORDER BY user_name").fetchall()
-        _display_users_table(rows, age)
+        _display_users_table(rows, age, extended)
         next_step("uc grants --name <username> --run")
         return
 
@@ -98,7 +102,10 @@ def run_users(w, conn, profile, flags):
             email    = next((e.value for e in (u.emails or []) if e.primary), None) or \
                        next((e.value for e in (u.emails or [])), "?")
             grps     = [g.display or str(g.value) for g in (u.groups or [])]
-            g_str    = ", ".join(grps[:3]) + ("…" if len(grps) > 3 else "")
+            if extended:
+                g_str = ", ".join(grps)
+            else:
+                g_str = ", ".join(grps[:3]) + (f"  [dim]+{len(grps)-3} more[/dim]" if len(grps) > 3 else "")
             is_admin = "admins" in grps or any("admin" in g.lower() for g in grps)
             t.add_row(u.user_name or "?", u.display_name or "?", email or "?",
                       g_str, "[red]Yes[/red]" if is_admin else "")

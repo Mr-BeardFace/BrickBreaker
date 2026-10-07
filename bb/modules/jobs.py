@@ -126,9 +126,13 @@ def run_get(w, conn, profile, flags):
                     console.print(f"  jar: {lib.jar}")
 
         if tasks:
+            extended = flags.get("extended", False)
+            shown_tasks = tasks if extended else tasks[:10]
             console.print(f"\n[bold]Tasks[/bold]  [dim]({len(tasks)} total)[/dim]")
-            for task in tasks[:10]:
+            for task in shown_tasks:
                 console.print(f"  {task.task_key or '?'}")
+            if not extended and len(tasks) > 10:
+                console.print(f"  [dim]... +{len(tasks)-10} more (--extended to show all)[/dim]")
 
         conn.execute(
             "INSERT OR REPLACE INTO job_configs VALUES (?,?,?,?,?)",

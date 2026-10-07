@@ -215,11 +215,13 @@ def run_execute(w, conn, profile, flags):
             t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
             for c in cols:
                 t.add_column(c, style="cyan")
-            for row in rows[:500]:
+            extended    = flags.get("extended", False)
+            shown_rows  = rows if extended else rows[:500]
+            for row in shown_rows:
                 t.add_row(*[str(v) if v is not None else "" for v in row])
             console.print(t)
-            if len(rows) > 500:
-                console.print(f"[dim]  {len(rows)} rows — showing 500[/dim]")
+            if not extended and len(rows) > 500:
+                console.print(f"[dim]  {len(rows)} rows — showing 500 (--extended to show all)[/dim]")
         else:
             console.print("[dim](no results)[/dim]")
     except Exception as e:

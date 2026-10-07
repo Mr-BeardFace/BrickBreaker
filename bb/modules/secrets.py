@@ -233,8 +233,9 @@ def run_dump(w, conn, profile, flags):
             t.add_column("Scope",  style="dim")
             t.add_column("Key",    style="cyan")
             t.add_column("Value",  style="yellow")
+            extended = flags.get("extended", False)
             for scope_name, key_name, value in hits:
-                t.add_row(scope_name, key_name, value[:120])
+                t.add_row(scope_name, key_name, value if extended else value[:120])
             console.print(t)
             console.print(f"\n  [dim]{len(hits)} secret(s) extracted[/dim]")
         else:
