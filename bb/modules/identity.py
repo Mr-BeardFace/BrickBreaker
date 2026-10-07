@@ -266,30 +266,35 @@ def run_tokens(w, conn, profile, flags):
 
 
 def run_ip_access_lists(w, conn, profile, flags):
-    module = "identity.ip-access-lists"
+    module   = "identity.ip-access-lists"
+    extended = flags.get("extended", False)
     use_cache, age = should_use_cache(conn, module, flags)
     if use_cache is None:
         console.print("[yellow]No cached data — run without --cached to pull[/yellow]")
         return
+
+    def _print_list(label, ltype, enabled, ips):
+        en = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        console.print(f"  [cyan]{label or '?'}[/cyan]  [dim]{ltype or '?'}[/dim]  enabled={en}  ({len(ips)} IPs)")
+        if extended:
+            for ip in ips:
+                console.print(f"    {ip}")
+        else:
+            preview = ", ".join(ips[:5])
+            if len(ips) > 5:
+                preview += f"  [dim]... +{len(ips)-5} more  (use --extended to show all)[/dim]"
+            if preview:
+                console.print(f"    [dim]{preview}[/dim]")
+
     if use_cache:
         rows = conn.execute("SELECT * FROM ip_access_lists ORDER BY label").fetchall()
         console.print(f"\n[bold]IP Access Lists[/bold]  [dim](cached {age})[/dim]\n")
-        t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-        t.add_column("Label",   style="cyan")
-        t.add_column("Type")
-        t.add_column("Enabled")
-        t.add_column("IPs",     justify="right")
-        t.add_column("Preview")
         for r in rows:
             try:
                 ips = json.loads(r["ip_addresses"] or "[]")
             except Exception:
                 ips = []
-            preview = ", ".join(ips[:3]) + ("..." if len(ips) > 3 else "")
-            t.add_row(r["label"] or "?", r["list_type"] or "?",
-                      "[green]Yes[/green]" if r["enabled"] else "[red]No[/red]",
-                      str(len(ips)), preview)
-        console.print(t)
+            _print_list(r["label"], r["list_type"], r["enabled"], ips)
         return
 
     console.print("\n[bold]IP Access Lists[/bold]\n")
@@ -305,23 +310,12 @@ def run_ip_access_lists(w, conn, profile, flags):
                  json.dumps(lst.ip_addresses or []),
                  int(bool(lst.enabled)), now)
             )
+            _print_list(lst.label,
+                        lst.list_type.value if lst.list_type else "?",
+                        lst.enabled,
+                        lst.ip_addresses or [])
         log_pull(conn, module, profile, len(lists))
         conn.commit()
-
-        t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-        t.add_column("Label",   style="cyan")
-        t.add_column("Type")
-        t.add_column("Enabled")
-        t.add_column("IPs",     justify="right")
-        t.add_column("Preview")
-        for lst in lists:
-            ips     = lst.ip_addresses or []
-            preview = ", ".join(ips[:3]) + ("…" if len(ips) > 3 else "")
-            t.add_row(lst.label or "?",
-                      lst.list_type.value if lst.list_type else "?",
-                      "[green]Yes[/green]" if lst.enabled else "[red]No[/red]",
-                      str(len(ips)), preview)
-        console.print(t)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -375,7 +369,7 @@ COMMANDS = {
         "description": "List network IP allowlists and blocklists",
         "activity": ["info"], "type": "R", "noise": "Low",
         "prereqs": ["Admin token required"], "caveats": [],
-        "flags": [],
+        "flags": [("--extended", "Show all IP addresses instead of preview")],
         "fn": run_ip_access_lists,
     },
 }
