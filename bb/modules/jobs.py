@@ -135,6 +135,29 @@ def run_get(w, conn, profile, flags):
              str(s.git_source.git_url if s and getattr(s, "git_source", None) else ""), now)
         )
         conn.commit()
+        next_step(f"jobs run --id {job_id} --run")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def run_run(w, conn, profile, flags):
+    job_id = flags.get("id")
+    if not job_id:
+        job_id = input("Job ID (from: jobs list --run)  e.g. 123456789: ").strip()
+
+    console.print(f"\n[bold]Trigger Job Run[/bold]  [dim]job_id={job_id}[/dim]\n")
+    console.print("  [yellow]W operation — this will create a job run[/yellow]\n")
+    confirm = input("  Confirm trigger run? [y/N] ").strip().lower()
+    if confirm != "y":
+        console.print("[dim]Cancelled[/dim]")
+        return
+
+    try:
+        waiter = w.jobs.run_now(job_id=int(job_id))
+        run_id = waiter._bind.get("run_id", "?")
+        console.print(f"\n  Run triggered  [cyan]run_id={run_id}[/cyan]")
+        console.print(f"  [dim]Runs as the job's configured identity / cluster[/dim]")
+        console.print(f"  [dim]Run history visible in Jobs UI under job {job_id}[/dim]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -155,5 +178,18 @@ COMMANDS = {
         "flags": [("--id ID", "Job ID")],
         "required_flags": ["--id"],
         "fn": run_get,
+    },
+    "run": {
+        "description": "Trigger an existing job run — executes as the job's configured identity",
+        "activity": ["latm", "persist"], "type": "W", "noise": "Low — single API call, appears in job run history",
+        "prereqs": ["Job ID — from jobs list"],
+        "caveats": [
+            "Run appears in Jobs UI history under the job — visible to workspace admins",
+            "Runs as the job's service principal or identity, which may have higher privilege",
+            "Does not wait for completion — returns run_id immediately",
+        ],
+        "flags": [("--id ID", "Job ID")],
+        "required_flags": ["--id"],
+        "fn": run_run,
     },
 }
