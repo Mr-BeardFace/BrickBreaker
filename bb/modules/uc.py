@@ -548,10 +548,37 @@ def run_table_meta(w, conn, profile, flags):
             except Exception as e:
                 console.print(f"  [red]Row count error: {e}[/red]")
 
-        elif cached_rows is None:
+        n_rows = flags.get("rows")
+        if warehouse and n_rows:
+            console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows})[/dim]\n")
+            try:
+                r = w.statement_execution.execute_statement(
+                    statement=f"SELECT * FROM {full_name} LIMIT {n_rows}",
+                    warehouse_id=warehouse,
+                    wait_timeout="50s",
+                )
+                state     = r.status.state.value if r.status and r.status.state else ""
+                schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
+                col_names = [c.name for c in schema]
+                rows      = r.result.data_array if state == "SUCCEEDED" and r.result and r.result.data_array else []
+                if col_names:
+                    t2 = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+                    for cn in col_names:
+                        t2.add_column(cn, style="cyan")
+                    for row in rows:
+                        t2.add_row(*[str(v) if v is not None else "" for v in row])
+                    console.print(t2)
+                else:
+                    console.print("[dim](no rows)[/dim]")
+            except Exception as e:
+                console.print(f"  [red]Sample error: {e}[/red]")
+        elif n_rows and not warehouse:
+            console.print("\n  [dim]--rows requires a warehouse — add --warehouse <id>[/dim]")
+
+        if cached_rows is None and not warehouse:
             console.print("\n  [dim]Row count unavailable — add --warehouse <id> for live count[/dim]")
             next_step(f"uc table-meta --id {full_name} --warehouse <id> --run",
-                      f"uc table-meta --id {full_name} --warehouse <id> --limit 10 --run")
+                      f"uc table-meta --id {full_name} --warehouse <id> --rows 10 --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -798,7 +825,7 @@ COMMANDS = {
             ("--id TABLE",      "Table full name (catalog.schema.table)"),
             ("--name TABLE",    "Alias for --id"),
             ("--warehouse ID",  "Warehouse ID — auto-detected from query history if omitted"),
-            ("--limit N",       "Sample row count — default 5, 0=skip samples"),
+            ("--rows N",        "Fetch N sample rows — omit to skip data query entirely"),
         ],
         "required_flags": ["--id"],
         "fn": run_table_meta,

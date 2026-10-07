@@ -4,7 +4,7 @@ _FLAGS_WITH_VALUES = {
     "--profile", "--host", "--token", "--filter", "--scope",
     "--limit", "--depth", "--id", "--path", "--warehouse",
     "--catalog", "--schema", "--name", "--sql", "--cluster",
-    "--output", "--model",
+    "--output", "--model", "--rows",
 }
 
 
@@ -17,7 +17,7 @@ def parse_flags(args: list) -> dict:
         "path": None, "warehouse": None, "catalog": None,
         "schema": None, "name": None, "sql": None,
         "cluster": None, "output": None, "model": None,
-        "limit": 100, "depth": 0,
+        "limit": 100, "depth": 0, "rows": None,
     }
     i = 0
     while i < len(args):
@@ -37,6 +37,12 @@ def parse_flags(args: list) -> dict:
             flags[k] = int(flags[k])
         except (TypeError, ValueError):
             flags[k] = 100 if k == "limit" else 0
+
+    if flags["rows"] is not None:
+        try:
+            flags["rows"] = int(flags["rows"])
+        except (TypeError, ValueError):
+            flags["rows"] = 5
 
     return flags
 
