@@ -533,9 +533,13 @@ def run_table_meta(w, conn, profile, flags):
                 r = w.statement_execution.execute_statement(
                     statement=f"SELECT COUNT(*) FROM {full_name}",
                     warehouse_id=warehouse,
+                    wait_timeout="50s",
                 )
-                if r.result and r.result.data_array:
+                state = r.status.state.value if r.status and r.status.state else ""
+                if state == "SUCCEEDED" and r.result and r.result.data_array:
                     console.print(f"  Live Count : [yellow]{r.result.data_array[0][0]}[/yellow]")
+                elif state not in ("SUCCEEDED", ""):
+                    console.print(f"  [yellow]Row count query {state.lower()}[/yellow]")
             except Exception as e:
                 console.print(f"  [red]Row count error: {e}[/red]")
 
@@ -545,7 +549,9 @@ def run_table_meta(w, conn, profile, flags):
                     r = w.statement_execution.execute_statement(
                         statement=f"SELECT * FROM {full_name} LIMIT {n_rows}",
                         warehouse_id=warehouse,
+                        wait_timeout="50s",
                     )
+                    state     = r.status.state.value if r.status and r.status.state else ""
                     schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
                     col_names = [c.name for c in schema]
                     rows      = r.result.data_array if r.result and r.result.data_array else []
@@ -612,8 +618,10 @@ def run_schema_meta(w, conn, profile, flags):
                     r = w.statement_execution.execute_statement(
                         statement=f"SELECT COUNT(*) FROM {tbl.full_name}",
                         warehouse_id=warehouse,
+                        wait_timeout="50s",
                     )
-                    row_str = str(r.result.data_array[0][0]) if r.result and r.result.data_array else "?"
+                    state   = r.status.state.value if r.status and r.status.state else ""
+                    row_str = str(r.result.data_array[0][0]) if state == "SUCCEEDED" and r.result and r.result.data_array else "?"
                 except Exception:
                     row_str = "[red]error[/red]"
             t.add_row(tbl.name or "?", ttype, col_cnt, row_str)
