@@ -8,7 +8,7 @@ A Databricks red team enumeration and lateral movement tool for authorized secur
 
 ## What It Does
 
-BrickBreaker enumerates Databricks workspaces across 13 attack surface areas:
+BrickBreaker enumerates Databricks workspaces across 14 attack surface areas:
 
 - **Credentials** — secret scopes, job env vars, init scripts, UC connection options, serving endpoint env vars, notebook content
 - **Cloud lateral movement** — IMDS credential extraction from running clusters (AWS STS, Azure ARM/Graph tokens), instance profiles, UC temp storage credentials (S3/ADLS)
@@ -28,7 +28,7 @@ cd BrickBreaker
 pip install -r requirements.txt
 ```
 
-**Requirements:** Python 3.10+, `databricks-sdk >= 0.20.0`, `rich >= 13.0.0`
+**Requirements:** Python 3.10+, `databricks-sdk >= 0.20.0`, `rich >= 13.0.0`, `cryptography >= 41.0.0`
 
 ---
 
@@ -152,6 +152,8 @@ Every command is labeled with an execution tier visible in its info pane:
 |---------|------|-------------|
 | `clusters` | R | Running clusters — owner, instance profile, auto-termination window |
 | `cluster-get` | R | Full cluster config — spark env vars, instance profile, init scripts (`--id`) |
+| `create-cluster` | W | Spin up a single-node cluster on latest LTS — auto-terminates in 30 min |
+| `delete-cluster` | W | Permanently delete a cluster (`--cluster`) |
 | `init-scripts-list` | R | Global init scripts (IDs and names) |
 | `init-script-get` | R | Full init script content, base64 decoded (`--id`) |
 | `instance-profiles` | R | IAM role ARNs registered for cluster attachment (AWS) |
@@ -165,6 +167,7 @@ Every command is labeled with an execution tier visible in its info pane:
 |---------|------|-------------|
 | `list` | R | All jobs — IDs, names, creator, schedule |
 | `get` | R | Full job config — spark env vars, task params, git source, libraries (`--id`) |
+| `run` | W | Trigger a job run now (`--id`) — returns run ID |
 
 > Serverless jobs store credentials in `notebook_task.base_parameters`. `jobs get` checks both `spark_env_vars` and task params.
 
@@ -175,7 +178,7 @@ Every command is labeled with an execution tier visible in its info pane:
 | Command | Type | Description |
 |---------|------|-------------|
 | `list` | R | List workspace items at a path (`--path`, `--depth`) |
-| `export` | R | Export a notebook or file source (`--path`) |
+| `export` | R | Export a notebook or file source (`--path`) — content cached for `loot scan` |
 | `git-credentials` | R | Git credential entries (usernames + providers — no token values) |
 | `repos` | R | All repos — URL, provider, branch, workspace path |
 
@@ -188,7 +191,7 @@ Every command is labeled with an execution tier visible in its info pane:
 | `catalogs` | R | All catalogs |
 | `schemas` | R | Schemas in a catalog (`--catalog`) |
 | `tables` | R | Tables in a schema — name, type, storage location (`--catalog`, `--schema`) |
-| `table-meta` | R | Columns, row count, sample rows (`--id`; warehouse auto-detected) |
+| `table-meta` | R | Column list and row count (`--id`; add `--rows N` to also pull N sample rows) |
 | `schema-meta` | R | All tables with column counts and row counts (`--catalog`, `--schema`) |
 | `external-locations` | R | External storage locations and credential bindings |
 | `storage-credentials` | R | Storage credential objects (IAM roles / service principals) |
@@ -269,6 +272,21 @@ All persist commands are type **W** (write) and prompt for confirmation.
 
 ---
 
+### `loot` — Aggregated findings from local cache
+
+Read-only views over the local SQLite cache — no API calls. Run after enumeration commands to review everything in one place.
+
+| Command | Type | Description |
+|---------|------|-------------|
+| `dump` | R\* | All cached high-value findings — secrets, job env vars (decrypted), UC connections, storage creds, git credentials, IAM instance profiles, saved queries, exported notebooks, tokens |
+| `scan` | R\* | Regex credential pattern scanner across all cached data — AWS keys, PATs, GitHub tokens, Azure secrets, Slack webhooks, and more |
+
+> Sensitive values (job env vars, UC connection options, init script content, notebook content) are stored **encrypted at rest** using Fernet symmetric encryption. Per-profile keys live at `~/.brickbreaker/<profile>.key`.
+
+> `recon cred-hunt` writes all fetched job configs and query text to the cache, so `loot dump` reflects the full sweep without re-running individual `jobs get` commands.
+
+---
+
 ### `recon` — Cross-module composite commands
 
 | Command | Type | Description |
@@ -293,7 +311,7 @@ All persist commands are type **W** (write) and prompt for confirmation.
 
 ## Caching
 
-BrickBreaker caches all pull results in a per-profile SQLite database at `~/.brickbreaker/<profile>.db`.
+BrickBreaker caches all pull results in a per-profile SQLite database at `~/.brickbreaker/<profile>.db`. Sensitive values (job spark env vars, UC connection options, init script content, exported notebook content) are encrypted at rest using Fernet symmetric encryption. The per-profile key is stored at `~/.brickbreaker/<profile>.key` — keep this directory private.
 
 ```bash
 # Use cached data (no API calls)
@@ -342,27 +360,37 @@ python brickbreaker.py secrets dump --cluster abc-123 --aggressive --output secr
 python brickbreaker.py recon whoami --run
 python brickbreaker.py recon attack-surface --run
 
-# 2. Passive credential sweep
+# 2. Passive credential sweep — caches all job configs and query text automatically
 python brickbreaker.py recon cred-hunt --run
 python brickbreaker.py recon cred-hunt --extended --run
 
-# 3. Enumerate high-value targets
+# 3. Review everything found in one place
+python brickbreaker.py loot dump --run
+python brickbreaker.py loot scan --run
+
+# 4. Enumerate high-value targets
 python brickbreaker.py secrets all --run
 python brickbreaker.py compute clusters --run
 python brickbreaker.py uc external-locations --run
 
-# 4. Cloud pivot (requires running cluster)
+# 5. Scan notebook content for hardcoded credentials
+python brickbreaker.py recon cred-hunt --aggressive --run
+# or export individual notebooks:
+python brickbreaker.py workspace export --path /path/to/notebook --run
+python brickbreaker.py loot scan --run
+
+# 6. Cloud pivot (requires running cluster)
 python brickbreaker.py recon cloud-pivot --run
 python brickbreaker.py imds aws --cluster <cluster_id> --aggressive --run
 
-# 5. Extract secrets (requires running cluster)
+# 7. Extract secrets (requires running cluster)
 python brickbreaker.py secrets dump --cluster <cluster_id> --aggressive --run
 
-# 6. Data access — direct storage credentials
+# 8. Data access — direct storage credentials
 python brickbreaker.py uc temp-path-creds --path s3://bucket/path --run
 python brickbreaker.py uc temp-table-creds --id catalog.schema.table --run
 
-# 7. Assess persistence options
+# 9. Assess persistence options
 python brickbreaker.py recon persist-check --run
 ```
 
