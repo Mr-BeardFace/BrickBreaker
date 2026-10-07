@@ -486,7 +486,6 @@ def _auto_warehouse(w, hint: str | None = None) -> tuple[str | None, str]:
 def run_table_meta(w, conn, profile, flags):
     full_name = flags.get("id") or flags.get("name")
     warehouse = flags.get("warehouse")
-    n_rows    = flags.get("limit") if flags.get("limit") != 100 else 5
 
     if not full_name:
         full_name = input("Table full name (from: uc tables --catalog <n> --schema <n> --run): ").strip()
@@ -543,29 +542,6 @@ def run_table_meta(w, conn, profile, flags):
             except Exception as e:
                 console.print(f"  [red]Row count error: {e}[/red]")
 
-            if n_rows > 0:
-                console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows})[/dim]\n")
-                try:
-                    r = w.statement_execution.execute_statement(
-                        statement=f"SELECT * FROM {full_name} LIMIT {n_rows}",
-                        warehouse_id=warehouse,
-                        wait_timeout="50s",
-                    )
-                    state     = r.status.state.value if r.status and r.status.state else ""
-                    schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
-                    col_names = [c.name for c in schema]
-                    rows      = r.result.data_array if r.result and r.result.data_array else []
-                    if col_names:
-                        t2 = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-                        for cn in col_names:
-                            t2.add_column(cn, style="cyan")
-                        for row in rows:
-                            t2.add_row(*[str(v) if v is not None else "" for v in row])
-                        console.print(t2)
-                    else:
-                        console.print("[dim](no rows)[/dim]")
-                except Exception as e:
-                    console.print(f"  [red]Sample error: {e}[/red]")
         elif cached_rows is None:
             console.print("\n  [dim]Row count unavailable — add --warehouse <id> for live count[/dim]")
             next_step(f"uc table-meta --id {full_name} --warehouse <id> --run",
