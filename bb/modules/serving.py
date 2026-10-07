@@ -26,6 +26,8 @@ def run_list(w, conn, profile, flags):
             sc = "green" if state == "READY" else "yellow"
             t.add_row(r["name"], f"[{sc}]{state}[/{sc}]", r["creator"] or "?")
         console.print(t)
+        next_step("serving get --name <name> --run",
+                  "serving logs --name <name> --run")
         return
 
     console.print("\n[bold]Serving Endpoints[/bold]\n")

@@ -25,6 +25,7 @@ def run_catalogs(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["name"], r["owner"] or "?", r["comment"] or "")
         console.print(t)
+        next_step("uc schemas --catalog <name> --run")
         return
 
     console.print("\n[bold]Catalogs[/bold]\n")
@@ -133,6 +134,7 @@ def run_external_locations(w, conn, profile, flags):
         rows = conn.execute("SELECT * FROM uc_external_locations ORDER BY name").fetchall()
         console.print(f"\n[bold]External Locations[/bold]  [dim](cached {age})[/dim]\n")
         _print_locs([(r["name"], r["url"], r["credential"]) for r in rows])
+        next_step("uc temp-path-creds --path <url> --run")
         return
 
     console.print("\n[bold]External Locations[/bold]\n")
@@ -168,6 +170,8 @@ def run_storage_credentials(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["name"], r["aws_arn"] or "", r["az_dir_id"] or "")
         console.print(t)
+        next_step("uc external-locations --run",
+                  "uc temp-path-creds --path <url> --run")
         return
 
     console.print("\n[bold]Storage Credentials[/bold]\n")
@@ -213,6 +217,7 @@ def run_connections_list(w, conn, profile, flags):
             has_opts = "[yellow]Yes[/yellow]" if r["options_json"] and r["options_json"] != "null" else ""
             t.add_row(r["name"], r["connection_type"] or "?", has_opts)
         console.print(t)
+        next_step("uc connections-get --name <name> --run")
         return
 
     console.print("\n[bold]Connections[/bold]  [dim](names and types only — use connections-get for creds)[/dim]\n")
@@ -284,6 +289,7 @@ def run_connections_all(w, conn, profile, flags):
                     console.print(f"  [cyan]{k}[/cyan] = {v}")
             except Exception:
                 pass
+        next_step("uc connections-get --name <name> --run")
         return
 
     console.print("\n[bold]All Connections (full options)[/bold]  [yellow]may contain credentials[/yellow]\n")

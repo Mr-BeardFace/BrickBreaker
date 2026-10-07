@@ -49,6 +49,8 @@ def run_list(w, conn, profile, flags):
         for r in rows:
             lang = f"  [dim]{r['language']}[/dim]" if r["language"] else ""
             console.print(f"  [cyan]{r['path']}[/cyan]  [dim]{r['item_type']}[/dim]{lang}")
+        next_step("workspace export --path <path> --run",
+                  "workspace export --path <path> --output <file> --run")
         return
 
     console.print(f"\n[bold]Workspace[/bold]  [dim]{path}[/dim]"
@@ -91,6 +93,7 @@ def run_git_credentials(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["credential_id"], r["git_username"] or "?", r["git_provider"] or "?")
         console.print(t)
+        next_step("workspace repos --run")
         return
 
     console.print("\n[bold]Git Credentials[/bold]\n")
@@ -136,6 +139,8 @@ def run_repos_list(w, conn, profile, flags):
             t.add_row(r["id"], r["path"] or "?", r["provider"] or "?",
                       r["branch"] or "?", r["url"] or "?")
         console.print(t)
+        next_step("workspace list /Repos/<user> --run",
+                  "workspace export --path <path> --run")
         return
 
     console.print("\n[bold]Repos[/bold]\n")

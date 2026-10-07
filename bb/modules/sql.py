@@ -32,6 +32,7 @@ def run_warehouses(w, conn, profile, flags):
                       f"[{sc}]{state}[/{sc}]",
                       r["creator"] or "?")
         console.print(t)
+        next_step("sql execute --warehouse <id> --sql \"<query>\" --run")
         return
 
     console.print("\n[bold]SQL Warehouses[/bold]\n")
@@ -80,6 +81,7 @@ def run_queries_list(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["query_id"], r["name"] or r["query_id"], r["created_by"] or "?")
         console.print(t)
+        next_step("sql queries-get --id <query_id> --run")
         return
 
     console.print("\n[bold]Saved Queries[/bold]\n")

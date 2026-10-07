@@ -26,6 +26,7 @@ def run_list(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["job_id"], r["name"] or "?", r["creator"] or "?", r["schedule"] or "")
         console.print(t)
+        next_step("jobs get --id <job_id> --run")
         return
 
     console.print("\n[bold]Jobs[/bold]\n")

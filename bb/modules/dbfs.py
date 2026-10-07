@@ -33,6 +33,8 @@ def run_list(w, conn, profile, flags):
             size = _fmt_size(r["file_size"]) if not r["is_dir"] else ""
             t.add_row(icon, r["path"], size)
         console.print(t)
+        next_step("dbfs read --path <path> --run",
+                  "dbfs read --path <path> --output <file> --run")
         return
 
     now = now_iso()

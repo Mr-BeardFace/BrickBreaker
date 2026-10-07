@@ -20,6 +20,8 @@ def run_scopes(w, conn, profile, flags):
             ac = "  [green]READ[/green]" if access == "READ" else ("  [red]DENIED[/red]" if access == "DENIED" else "")
             console.print(f"  [cyan]{r['name']}[/cyan]  [dim]{r['backend_type'] or '?'}[/dim]{ac}")
         console.print()
+        next_step("secrets list --scope <name> --run",
+                  "secrets all --run")
         return
 
     console.print("\n[bold]Secret Scopes[/bold]\n")
@@ -99,6 +101,8 @@ def run_all(w, conn, profile, flags):
             ).fetchall()
             for k in keys:
                 console.print(f"  [dim]{k['key']}[/dim]")
+        next_step("secrets get --scope <name> --id <key> --cluster <id> --aggressive --run",
+                  "secrets dump --cluster <id> --aggressive --run")
         return
 
     total_keys = 0

@@ -23,6 +23,9 @@ def run_clusters(w, conn, profile, flags):
             console.print(f"    owner   : {r['owner'] or '?'}")
             console.print(f"    profile : {r['instance_profile'] or '[dim]none[/dim]'}")
             console.print()
+        next_step("compute cluster-get --id <cluster_id> --run",
+                  "secrets dump --cluster <cluster_id> --aggressive --run",
+                  "imds aws --cluster <cluster_id> --aggressive --run")
         return
 
     console.print("\n[bold]Running Clusters[/bold]\n")
@@ -129,6 +132,8 @@ def run_init_scripts_list(w, conn, profile, flags):
                       str(r["position"]),
                       "[green]Yes[/green]" if r["enabled"] else "[red]No[/red]")
         console.print(t)
+        next_step("compute init-script-get --id <script_id> --run",
+                  "compute init-script-get --id <script_id> --output <file> --run")
         return
 
     console.print("\n[bold]Global Init Scripts[/bold]\n")

@@ -64,6 +64,7 @@ def run_users(w, conn, profile, flags):
     if use_cache:
         rows = conn.execute("SELECT * FROM users ORDER BY user_name").fetchall()
         _display_users_table(rows, age)
+        next_step("uc grants --name <username> --run")
         return
 
     console.print("\n[bold]Users[/bold]\n")
@@ -125,6 +126,7 @@ def run_groups(w, conn, profile, flags):
         for r in rows:
             t.add_row(r["display_name"] or "?", r["id"], str(r["member_count"] or 0))
         console.print(t)
+        next_step("uc grants --name <group_display_name> --run")
         return
 
     console.print("\n[bold]Groups[/bold]\n")
@@ -177,6 +179,8 @@ def run_service_principals(w, conn, profile, flags):
             t.add_row(r["display_name"] or "?", r["application_id"] or "?",
                       r["id"], "[green]Yes[/green]" if r["active"] else "[red]No[/red]")
         console.print(t)
+        next_step("uc grants --name <sp_display_name> --run",
+                  "persist create-obo-token --id <application_id> --run")
         return
 
     console.print("\n[bold]Service Principals[/bold]\n")
@@ -230,6 +234,7 @@ def run_tokens(w, conn, profile, flags):
             t.add_row(r["token_id"] or "?", r["comment"] or "(no comment)",
                       fmt_epoch_ms(r["creation_time"]), expires)
         console.print(t)
+        next_step("persist create-token --run")
         return
 
     console.print("\n[bold]My Tokens[/bold]  [dim](values never returned by API)[/dim]\n")
