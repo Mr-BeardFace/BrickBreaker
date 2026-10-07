@@ -5,6 +5,7 @@ import time
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
 from bb.core.display import console, write_output, next_step
+from bb.core.crypto import encrypt, decrypt
 from rich import box
 from rich.table import Table
 
@@ -170,7 +171,8 @@ def run_init_script_get(w, conn, profile, flags):
         s       = w.global_init_scripts.get(script_id=script_id)
         content = base64.b64decode(s.script or "").decode("utf-8", errors="replace")
         write_output(content, flags)
-        conn.execute("UPDATE init_scripts SET content=? WHERE script_id=?", (content, script_id))
+        conn.execute("UPDATE init_scripts SET content=? WHERE script_id=?",
+                     (encrypt(profile, content), script_id))
         conn.commit()
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

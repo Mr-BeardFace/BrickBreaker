@@ -1,10 +1,12 @@
 """Recon module — cross-module composite commands"""
 
+import json
 import re
 import time
 
 from bb.core.db import now_iso, cache_age
 from bb.core.display import console, next_step
+from bb.core.crypto import encrypt
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -150,8 +152,9 @@ def run_cred_hunt(w, conn, profile, flags):
     # ── Job spark env vars + task base_parameters ───────
     console.print("[cyan]→ Job env vars / task params[/cyan]")
     try:
-        jobs = list(w.jobs.list())
-        for j in jobs:
+        job_list = list(w.jobs.list())
+        now_ts   = now_iso()
+        for j in job_list:
             try:
                 full     = w.jobs.get(job_id=j.job_id)
                 s        = full.settings
@@ -159,15 +162,35 @@ def run_cred_hunt(w, conn, profile, flags):
                 env_vars = {}
                 if s and getattr(s, "new_cluster", None) and s.new_cluster.spark_env_vars:
                     env_vars = s.new_cluster.spark_env_vars
+                elif s and getattr(s, "spark_env_vars", None):
+                    env_vars = s.spark_env_vars
+                task_params = {}
                 for task in (s.tasks if s else []) or []:
                     if task.notebook_task and task.notebook_task.base_parameters:
-                        env_vars.update(task.notebook_task.base_parameters)
-                for k, v in env_vars.items():
+                        task_params.update(task.notebook_task.base_parameters)
+                all_env = {**env_vars, **task_params}
+                # Cache to jobs + job_configs so loot dump picks them up
+                conn.execute(
+                    "INSERT OR REPLACE INTO jobs VALUES (?,?,?,?,?)",
+                    (str(j.job_id), jname,
+                     s.email_notifications.on_failure[0] if (s and s.email_notifications
+                         and s.email_notifications.on_failure) else None,
+                     None, now_ts)
+                )
+                git_url = str(s.git_source.git_url if s and getattr(s, "git_source", None) else "")
+                conn.execute(
+                    "INSERT OR REPLACE INTO job_configs VALUES (?,?,?,?,?)",
+                    (str(j.job_id), json.dumps({}),
+                     encrypt(profile, json.dumps(all_env)),
+                     git_url, now_ts)
+                )
+                for k, v in all_env.items():
                     if cred_pat.search(k) or cred_pat.search(v or ""):
                         hits.append(("job-env-var", f"{jname}/{k}", 0, v or ""))
             except Exception:
                 pass
-        console.print(f"  [dim]{len(jobs)} jobs scanned[/dim]")
+        conn.commit()
+        console.print(f"  [dim]{len(job_list)} jobs scanned[/dim]")
     except Exception as e:
         console.print(f"  [red]{e}[/red]")
 
@@ -192,16 +215,22 @@ def run_cred_hunt(w, conn, profile, flags):
         # ── Saved SQL queries ─────────────────────────────
         console.print("[cyan]→ Saved SQL queries[/cyan]")
         try:
-            queries = list(w.queries.list())
+            queries  = list(w.queries.list())
+            now_ts2  = now_iso()
             for q in queries:
                 try:
                     full  = w.queries.get(id=str(q.id))
                     qname = full.display_name or str(q.id)
+                    conn.execute(
+                        "INSERT OR REPLACE INTO saved_queries VALUES (?,?,?,?,?)",
+                        (str(full.id), qname, full.query_text, full.owner_user_name, now_ts2)
+                    )
                     for i, line in enumerate((full.query_text or "").splitlines(), 1):
                         if cred_pat.search(line):
                             hits.append(("saved-query", qname, i, line.strip()))
                 except Exception:
                     pass
+            conn.commit()
             console.print(f"  [dim]{len(queries)} queries scanned[/dim]")
         except Exception as e:
             console.print(f"  [red]{e}[/red]")

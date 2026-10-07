@@ -5,6 +5,7 @@ import json
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
 from bb.core.display import console, next_step
 from bb.core.flags import limit
+from bb.core.crypto import encrypt, decrypt
 from rich import box
 from rich.table import Table
 
@@ -132,7 +133,7 @@ def run_get(w, conn, profile, flags):
         conn.execute(
             "INSERT OR REPLACE INTO job_configs VALUES (?,?,?,?,?)",
             (str(j.job_id), json.dumps({}),
-             json.dumps(env_vars or task_params),
+             encrypt(profile, json.dumps(env_vars or task_params)),
              str(s.git_source.git_url if s and getattr(s, "git_source", None) else ""), now)
         )
         conn.commit()

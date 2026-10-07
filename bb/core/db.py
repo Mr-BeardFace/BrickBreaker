@@ -200,6 +200,11 @@ def _init_schema(conn: sqlite3.Connection):
             file_size INTEGER,
             pulled_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS notebook_content (
+            path       TEXT PRIMARY KEY,
+            content    TEXT,
+            pulled_at  TEXT
+        );
     """)
     conn.commit()
 

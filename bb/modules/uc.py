@@ -5,6 +5,7 @@ import json
 from bb.core.db import now_iso, log_pull, should_use_cache
 from bb.core.display import console, next_step
 from bb.core.flags import limit
+from bb.core.crypto import encrypt, decrypt
 from rich import box
 from rich.table import Table
 
@@ -263,7 +264,7 @@ def run_connections_get(w, conn, profile, flags):
             console.print("  [dim]options: (empty)[/dim]")
         conn.execute(
             "INSERT OR REPLACE INTO uc_connections VALUES (?,?,?,?)",
-            (c.name, ct, json.dumps(options), now)
+            (c.name, ct, encrypt(profile, json.dumps(options)), now)
         )
         conn.commit()
     except Exception as e:
@@ -308,7 +309,7 @@ def run_connections_all(w, conn, profile, flags):
                 console.print(f"  [cyan]{k}[/cyan] = {v}")
             conn.execute(
                 "INSERT OR REPLACE INTO uc_connections VALUES (?,?,?,?)",
-                (c.name, ct, json.dumps(options), now)
+                (c.name, ct, encrypt(profile, json.dumps(options)), now)
             )
         log_pull(conn, module, profile, len(conns))
         conn.commit()

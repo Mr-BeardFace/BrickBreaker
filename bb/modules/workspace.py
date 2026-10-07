@@ -3,6 +3,7 @@
 import base64
 
 from bb.core.db import now_iso, log_pull, should_use_cache
+from bb.core.crypto import encrypt
 from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
@@ -73,6 +74,12 @@ def run_export(w, conn, profile, flags):
         result  = w.workspace.export(path=path, format=ExportFormat.SOURCE)
         content = base64.b64decode(result.content or "").decode("utf-8", errors="replace")
         write_output(content, flags)
+        conn.execute(
+            "INSERT OR REPLACE INTO notebook_content VALUES (?,?,?)",
+            (path, encrypt(profile, content), now_iso())
+        )
+        conn.commit()
+        next_step("loot scan --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
