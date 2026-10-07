@@ -531,9 +531,9 @@ def run_table_meta(w, conn, profile, flags):
         if warehouse:
             try:
                 r = w.statement_execution.execute_statement(
+                    statement=f"SELECT COUNT(*) FROM {full_name}",
                     warehouse_id=warehouse,
-                    statement=f"SELECT COUNT(*) FROM {full_name}"
-                ).result()
+                )
                 if r.result and r.result.data_array:
                     console.print(f"  Live Count : [yellow]{r.result.data_array[0][0]}[/yellow]")
             except Exception as e:
@@ -543,9 +543,9 @@ def run_table_meta(w, conn, profile, flags):
                 console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows})[/dim]\n")
                 try:
                     r = w.statement_execution.execute_statement(
+                        statement=f"SELECT * FROM {full_name} LIMIT {n_rows}",
                         warehouse_id=warehouse,
-                        statement=f"SELECT * FROM {full_name} LIMIT {n_rows}"
-                    ).result()
+                    )
                     schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
                     col_names = [c.name for c in schema]
                     rows      = r.result.data_array if r.result and r.result.data_array else []
@@ -610,9 +610,9 @@ def run_schema_meta(w, conn, profile, flags):
             if warehouse:
                 try:
                     r = w.statement_execution.execute_statement(
+                        statement=f"SELECT COUNT(*) FROM {tbl.full_name}",
                         warehouse_id=warehouse,
-                        statement=f"SELECT COUNT(*) FROM {tbl.full_name}"
-                    ).result()
+                    )
                     row_str = str(r.result.data_array[0][0]) if r.result and r.result.data_array else "?"
                 except Exception:
                     row_str = "[red]error[/red]"
