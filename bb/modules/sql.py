@@ -3,7 +3,7 @@
 import json
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, next_step
 from bb.core.flags import limit
 from rich import box
 from rich.table import Table
@@ -59,7 +59,7 @@ def run_warehouses(w, conn, profile, flags):
         log_pull(conn, module, profile, len(whs))
         conn.commit()
         console.print(t)
-        console.print("\n  [dim]Use 'sql execute --warehouse <id> --sql <query>' to run SQL[/dim]")
+        next_step("sql execute --warehouse <id> --sql \"<query>\" --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -78,7 +78,7 @@ def run_queries_list(w, conn, profile, flags):
         t.add_column("Name",  style="cyan")
         t.add_column("Owner")
         for r in rows:
-            t.add_row(r["query_id"], r["name"] or "?", r["created_by"] or "?")
+            t.add_row(r["query_id"], r["name"] or r["query_id"], r["created_by"] or "?")
         console.print(t)
         return
 
@@ -92,17 +92,17 @@ def run_queries_list(w, conn, profile, flags):
         t.add_column("Name",  style="cyan")
         t.add_column("Owner")
         for q in shown:
-            t.add_row(str(q.id), q.name or "?", q.user.name if q.user else "?")
+            t.add_row(str(q.id), q.display_name or "?", q.owner_user_name or "?")
             conn.execute(
                 "INSERT OR REPLACE INTO saved_queries VALUES (?,?,?,?,?)",
-                (str(q.id), q.name, None, q.user.name if q.user else None, now)
+                (str(q.id), q.display_name, None, q.owner_user_name, now)
             )
         log_pull(conn, module, profile, len(queries))
         conn.commit()
         console.print(t)
         if flags["limit"] > 0 and len(queries) > flags["limit"]:
             console.print(f"[dim]  {len(queries)} total — showing {flags['limit']}[/dim]")
-        console.print("\n  [dim]Use 'sql queries-get --id <id>' to see query text[/dim]")
+        next_step("sql queries-get --id <id> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -110,20 +110,19 @@ def run_queries_list(w, conn, profile, flags):
 def run_queries_get(w, conn, profile, flags):
     qid = flags.get("id")
     if not qid:
-        qid = input("Query ID: ").strip()
+        qid = input("Query ID (from: sql queries --run): ").strip()
     console.print(f"\n[bold]Saved Query[/bold]  [dim]{qid}[/dim]\n")
     try:
         q   = w.queries.get(id=qid)
         now = now_iso()
-        console.print(f"  Name    : [cyan]{q.name or '?'}[/cyan]")
-        console.print(f"  Owner   : {q.user.name if q.user else '?'}")
-        if q.query:
+        console.print(f"  Name    : [cyan]{q.display_name or '?'}[/cyan]")
+        console.print(f"  Owner   : {q.owner_user_name or '?'}")
+        if q.query_text:
             console.print("\n[bold]Query Text[/bold]")
-            console.print(f"  {q.query}")
+            console.print(f"  {q.query_text}")
         conn.execute(
             "INSERT OR REPLACE INTO saved_queries VALUES (?,?,?,?,?)",
-            (str(q.id), q.name, q.query,
-             q.user.name if q.user else None, now)
+            (str(q.id), q.display_name, q.query_text, q.owner_user_name, now)
         )
         conn.commit()
     except Exception as e:
@@ -140,8 +139,17 @@ def run_query_history(w, conn, profile, flags):
         kwargs = {}
         if wh_id:
             kwargs["filter_by"] = QueryFilter(warehouse_ids=[wh_id])
-        history = list(w.query_history.list(**kwargs))
-        shown   = limit(history, flags["limit"])
+        history = []
+        page_token = None
+        while True:
+            if page_token:
+                kwargs["page_token"] = page_token
+            resp = w.query_history.list(**kwargs)
+            history.extend(resp.res or [])
+            if not resp.has_next_page or (flags["limit"] > 0 and len(history) >= flags["limit"]):
+                break
+            page_token = resp.next_page_token
+        shown = limit(history, flags["limit"])
 
         t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
         t.add_column("User",        style="cyan")
@@ -160,6 +168,7 @@ def run_query_history(w, conn, profile, flags):
         console.print(t)
         if flags["limit"] > 0 and len(history) > flags["limit"]:
             console.print(f"[dim]  showing {flags['limit']} — use --limit 0 for all[/dim]")
+        next_step("sql execute --warehouse <id> --sql \"<query>\" --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -167,7 +176,7 @@ def run_query_history(w, conn, profile, flags):
 def run_execute(w, conn, profile, flags):
     wh_id = flags.get("warehouse")
     if not wh_id:
-        wh_id = input("Warehouse ID: ").strip()
+        wh_id = input("Warehouse ID (from: sql warehouses --run): ").strip()
     sql = flags.get("sql")
     if not sql:
         sql = input("SQL: ").strip()
@@ -222,6 +231,7 @@ COMMANDS = {
         "prereqs": ["Query ID — from sql queries"],
         "caveats": ["Saved queries may contain hardcoded credentials in query text"],
         "flags": [("--id ID", "Query ID")],
+        "required_flags": ["--id"],
         "fn": run_queries_get,
     },
     "query-history": {
@@ -247,6 +257,7 @@ COMMANDS = {
             ("--warehouse ID", "Warehouse ID"),
             ("--sql TEXT",     "SQL statement (prompts if omitted)"),
         ],
+        "required_flags": ["--warehouse"],
         "fn": run_execute,
     },
 }

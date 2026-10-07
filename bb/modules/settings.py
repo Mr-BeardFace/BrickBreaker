@@ -28,9 +28,10 @@ def run_dump(w, conn, profile, flags):
     # Compliance / security profile
     try:
         console.print("\n[bold]Compliance Security Profile[/bold]")
-        csp = w.settings.read_compliance_security_profile()
-        console.print(f"  Enabled       : {csp.compliance_security_profile_workspace.is_enabled}")
-        features = csp.compliance_security_profile_workspace.compliance_standards or []
+        csp = w.settings.compliance_security_profile.get()
+        ws  = csp.compliance_security_profile_workspace
+        console.print(f"  Enabled       : {ws.is_enabled if ws else '?'}")
+        features = (ws.compliance_standards or []) if ws else []
         for f in features:
             console.print(f"  Standard      : {f.value if hasattr(f,'value') else f}")
     except Exception as e:

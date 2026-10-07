@@ -4,7 +4,7 @@ import base64
 import time
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
 
@@ -44,10 +44,10 @@ def run_clusters(w, conn, profile, flags):
             conn.execute(
                 "INSERT OR REPLACE INTO clusters VALUES (?,?,?,?,?,?,?)",
                 (c.cluster_id, c.cluster_name, c.creator_user_name, iprofile,
-                 c.autotermination_minutes, c.last_activity_time, now)
+                 c.autotermination_minutes, c.last_restarted_time, now)
             )
             auto_min  = c.autotermination_minutes or 0
-            last_act  = c.last_activity_time or 0
+            last_act  = c.last_restarted_time or 0
             if auto_min == 0:
                 window = "[green]always-on[/green]"
             else:
@@ -67,6 +67,9 @@ def run_clusters(w, conn, profile, flags):
 
         log_pull(conn, module, profile, len(clusters))
         conn.commit()
+        next_step("compute cluster-get --id <cluster_id> --run",
+                  "secrets dump --cluster <cluster_id> --aggressive --run",
+                  "imds aws --cluster <cluster_id> --aggressive --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -74,7 +77,7 @@ def run_clusters(w, conn, profile, flags):
 def run_cluster_get(w, conn, profile, flags):
     cluster_id = flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID: ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
     console.print(f"\n[bold]Cluster Config[/bold]  [dim]{cluster_id}[/dim]\n")
     try:
         c        = w.clusters.get(cluster_id=cluster_id)
@@ -147,7 +150,8 @@ def run_init_scripts_list(w, conn, profile, flags):
         log_pull(conn, module, profile, len(scripts))
         conn.commit()
         console.print(t)
-        console.print("\n  [dim]Use 'compute init-script-get --id <id>' to retrieve content[/dim]")
+        next_step("compute init-script-get --id <script_id> --run",
+                  "compute init-script-get --id <script_id> --output <file> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -155,12 +159,12 @@ def run_init_scripts_list(w, conn, profile, flags):
 def run_init_script_get(w, conn, profile, flags):
     script_id = flags.get("id")
     if not script_id:
-        script_id = input("Script ID: ").strip()
+        script_id = input("Script ID (from: compute init-scripts-list --run): ").strip()
     console.print(f"\n[bold]Init Script Content[/bold]  [dim]{script_id}[/dim]\n")
     try:
         s       = w.global_init_scripts.get(script_id=script_id)
         content = base64.b64decode(s.script or "").decode("utf-8", errors="replace")
-        console.print(content)
+        write_output(content, flags)
         conn.execute("UPDATE init_scripts SET content=? WHERE script_id=?", (content, script_id))
         conn.commit()
     except Exception as e:
@@ -181,6 +185,8 @@ def run_instance_profiles(w, conn, profile, flags):
         log_pull(conn, module, profile, len(profiles))
         conn.commit()
         console.print(t)
+        next_step("compute clusters --run",
+                  "imds aws --cluster <cluster_id> --aggressive --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -193,7 +199,7 @@ def run_execute(w, conn, profile, flags):
 
     cluster_id = flags.get("cluster") or flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID: ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
     cmd = flags.get("sql") or input("Command: ").strip()
 
     console.print(f"\n[bold]Executing on[/bold] [cyan]{cluster_id}[/cyan]\n")
@@ -207,7 +213,7 @@ def run_execute(w, conn, profile, flags):
             command=cmd,
         ).result()
         if result.results:
-            console.print(result.results.data or "(no output)")
+            write_output(result.results.data or "(no output)", flags)
         w.command_execution.destroy(cluster_id=cluster_id, context_id=ctx.id)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -228,6 +234,7 @@ COMMANDS = {
         "prereqs": ["Cluster ID — from compute clusters"],
         "caveats": ["Requires CAN_MANAGE on cluster or admin"],
         "flags": [("--id ID", "Cluster ID")],
+        "required_flags": ["--id"],
         "fn": run_cluster_get,
     },
     "init-scripts-list": {
@@ -243,7 +250,8 @@ COMMANDS = {
         "activity": ["cred"], "type": "R", "noise": "Low",
         "prereqs": ["Admin token required", "Script ID — from init-scripts-list"],
         "caveats": ["High-value — scripts run on every cluster, often contain hardcoded creds"],
-        "flags": [("--id ID", "Script ID")],
+        "flags": [("--id ID", "Script ID"), ("--output FILE", "Save content to file")],
+        "required_flags": ["--id"],
         "fn": run_init_script_get,
     },
     "instance-profiles": {
@@ -263,9 +271,12 @@ COMMANDS = {
             "Cluster start is separate and explicit — this assumes cluster is already running",
         ],
         "flags": [
-            ("--cluster ID", "Cluster ID"),
-            ("--sql TEXT",   "Command to run (prompts if omitted)"),
+            ("--cluster ID",  "Cluster ID"),
+            ("--id ID",       "Alias for --cluster"),
+            ("--sql TEXT",    "Command to run (prompts if omitted)"),
+            ("--output FILE", "Save output to file"),
         ],
+        "required_flags": ["--cluster"],
         "aggressive": ["Cluster code execution"],
         "fn": run_execute,
     },

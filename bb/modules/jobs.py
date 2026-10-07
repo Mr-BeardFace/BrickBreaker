@@ -3,7 +3,7 @@
 import json
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, next_step
 from bb.core.flags import limit
 from rich import box
 from rich.table import Table
@@ -61,7 +61,7 @@ def run_list(w, conn, profile, flags):
         console.print(t)
         if flags["limit"] > 0 and len(jobs) > flags["limit"]:
             console.print(f"[dim]  {len(jobs)} total — showing {flags['limit']}[/dim]")
-        console.print("\n  [dim]Use 'jobs get --id <job_id>' to inspect config[/dim]")
+        next_step("jobs get --id <job_id> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -69,29 +69,40 @@ def run_list(w, conn, profile, flags):
 def run_get(w, conn, profile, flags):
     job_id = flags.get("id")
     if not job_id:
-        job_id = input("Job ID: ").strip()
+        job_id = input("Job ID (from: jobs list --run): ").strip()
     console.print(f"\n[bold]Job Config[/bold]  [dim]{job_id}[/dim]\n")
     try:
         j    = w.jobs.get(job_id=int(job_id))
         s    = j.settings
         now  = now_iso()
 
-        # Spark env vars (high value)
+        # Spark env vars (high value) — check cluster-level, job-level, and task notebook params
         env_vars = {}
-        if s and s.new_cluster and s.new_cluster.spark_env_vars:
+        if s and getattr(s, "new_cluster", None) and s.new_cluster.spark_env_vars:
             env_vars = s.new_cluster.spark_env_vars
-        elif s and hasattr(s, "spark_env_vars") and s.spark_env_vars:
+        elif s and getattr(s, "spark_env_vars", None):
             env_vars = s.spark_env_vars
+
+        # Serverless jobs store creds as notebook task base_parameters
+        task_params = {}
+        tasks = (getattr(s, "tasks", None) if s else None) or []
+        for task in tasks:
+            if task.notebook_task and task.notebook_task.base_parameters:
+                task_params.update(task.notebook_task.base_parameters)
 
         if env_vars:
             console.print("[bold]Spark Env Vars[/bold]")
             for k, v in env_vars.items():
                 console.print(f"  [cyan]{k}[/cyan] = {v}")
+        elif task_params:
+            console.print("[bold]Task Parameters (notebook base_parameters)[/bold]")
+            for k, v in task_params.items():
+                console.print(f"  [cyan]{k}[/cyan] = {v}")
         else:
-            console.print("[dim]spark_env_vars: (none)[/dim]")
+            console.print("[dim]spark_env_vars / task_params: (none)[/dim]")
 
         # Git source
-        if s and s.git_source:
+        if s and getattr(s, "git_source", None):
             gs = s.git_source
             console.print("\n[bold]Git Source[/bold]")
             console.print(f"  url      : [cyan]{gs.git_url}[/cyan]")
@@ -99,7 +110,7 @@ def run_get(w, conn, profile, flags):
             console.print(f"  branch   : {gs.git_branch or '?'}")
 
         # Libraries
-        libs = (s.libraries if s else None) or []
+        libs = (getattr(s, "libraries", None) if s else None) or []
         if libs:
             console.print("\n[bold]Libraries[/bold]")
             for lib in libs:
@@ -112,8 +123,6 @@ def run_get(w, conn, profile, flags):
                 elif lib.jar:
                     console.print(f"  jar: {lib.jar}")
 
-        # Tasks summary
-        tasks = (s.tasks if s else None) or []
         if tasks:
             console.print(f"\n[bold]Tasks[/bold]  [dim]({len(tasks)} total)[/dim]")
             for task in tasks[:10]:
@@ -122,8 +131,8 @@ def run_get(w, conn, profile, flags):
         conn.execute(
             "INSERT OR REPLACE INTO job_configs VALUES (?,?,?,?,?)",
             (str(j.job_id), json.dumps({}),
-             json.dumps(env_vars),
-             str(s.git_source.git_url if s and s.git_source else ""), now)
+             json.dumps(env_vars or task_params),
+             str(s.git_source.git_url if s and getattr(s, "git_source", None) else ""), now)
         )
         conn.commit()
     except Exception as e:
@@ -144,6 +153,7 @@ COMMANDS = {
         "prereqs": ["Job ID — from jobs list"],
         "caveats": ["Spark env vars are a common credential source"],
         "flags": [("--id ID", "Job ID")],
+        "required_flags": ["--id"],
         "fn": run_get,
     },
 }

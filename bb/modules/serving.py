@@ -3,7 +3,7 @@
 import json
 
 from bb.core.db import now_iso, log_pull, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
 
@@ -48,7 +48,8 @@ def run_list(w, conn, profile, flags):
         log_pull(conn, module, profile, len(endpoints))
         conn.commit()
         console.print(t)
-        console.print("\n  [dim]Use 'serving get --name <n>' for config / 'serving logs --name <n>' for container logs[/dim]")
+        next_step("serving get --name <name> --run",
+                  "serving logs --name <name> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -56,7 +57,7 @@ def run_list(w, conn, profile, flags):
 def run_get(w, conn, profile, flags):
     name = flags.get("name") or flags.get("id")
     if not name:
-        name = input("Endpoint name: ").strip()
+        name = input("Endpoint name (from: serving list --run): ").strip()
     console.print(f"\n[bold]Serving Endpoint Config[/bold]  [dim]{name}[/dim]\n")
     try:
         ep  = w.serving_endpoints.get(name=name)
@@ -90,9 +91,9 @@ def run_get(w, conn, profile, flags):
 def run_logs(w, conn, profile, flags):
     name = flags.get("name") or flags.get("id")
     if not name:
-        name = input("Endpoint name: ").strip()
+        name = input("Endpoint name (from: serving list --run): ").strip()
     # model name defaults to first served model — user can override
-    model = flags.get("schema") or input("Served model name (or Enter to try first): ").strip()
+    model = flags.get("model") or flags.get("schema") or input("Served model name (from: serving get --name <n> --run, or Enter to auto-detect): ").strip()
 
     if not model:
         try:
@@ -111,7 +112,7 @@ def run_logs(w, conn, profile, flags):
     console.print(f"\n[bold]Container Logs[/bold]  [dim]{name}/{model}[/dim]\n")
     try:
         logs = w.serving_endpoints.logs(name=name, served_model_name=model)
-        console.print(logs.logs or "(no logs)")
+        write_output(logs.logs or "(no logs)", flags)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -128,7 +129,8 @@ COMMANDS = {
         "activity": ["info", "cred"], "type": "R", "noise": "Low",
         "prereqs": ["Endpoint name — from serving list"],
         "caveats": ["environment_vars on served models may contain secrets — unconfirmed, needs live test"],
-        "flags": [("--name NAME", "Endpoint name")],
+        "flags": [("--name NAME", "Endpoint name"), ("--id NAME", "Alias for --name")],
+        "required_flags": ["--name"],
         "fn": run_get,
     },
     "logs": {
@@ -138,8 +140,11 @@ COMMANDS = {
         "caveats": ["Container logs may contain printed credentials or stack traces"],
         "flags": [
             ("--name NAME",   "Endpoint name"),
-            ("--schema NAME", "Served model name (uses first model if omitted)"),
+            ("--id NAME",     "Alias for --name"),
+            ("--model NAME",  "Served model name (uses first model if omitted)"),
+            ("--output FILE", "Save logs to file"),
         ],
+        "required_flags": ["--name"],
         "fn": run_logs,
     },
 }

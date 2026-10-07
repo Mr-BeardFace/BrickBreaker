@@ -19,6 +19,28 @@ ACT_COLORS   = {"info": "blue", "cred": "red", "latm": "magenta", "data": "cyan"
 ACT_LABELS   = {"info": "Info", "cred": "Cred Pull", "latm": "Lat Move", "data": "Data", "persist": "Persist"}
 
 
+def next_step(*commands: str):
+    """Print one or more follow-up command suggestions after a result."""
+    console.print()
+    for cmd in commands:
+        console.print(f"  [dim]↳[/dim] [cyan]{cmd}[/cyan]")
+
+
+def write_output(content: str, flags: dict, label: str = "output"):
+    """Write content to --output file if specified, otherwise print to console."""
+    path = flags.get("output")
+    if path:
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            console.print(f"  [green]Saved to {path}[/green]")
+        except Exception as e:
+            console.print(f"  [red]Failed to write {path}: {e}[/red]")
+            console.print(content)
+    else:
+        console.print(content)
+
+
 def print_header(profile: str):
     from bb.core.config import get_profile_config
     cfg  = get_profile_config(profile)
@@ -62,9 +84,14 @@ def show_module_info(category: str, command: str):
         lines += [f"    [yellow]⚠[/yellow] {c}" for c in m["caveats"]]
 
     if m.get("flags"):
+        required = set(m.get("required_flags", []))
         lines += ["", "  [cyan]Flags[/cyan]"]
         for flag, help_text in m["flags"]:
-            lines.append(f"    [cyan]{flag:<26}[/cyan] {help_text}")
+            flag_key = flag.split()[0]  # e.g. "--scope" from "--scope NAME"
+            req_mark = " [red]*[/red]" if flag_key in required else ""
+            lines.append(f"    [cyan]{flag:<26}[/cyan]{req_mark} {help_text}")
+        if required:
+            lines.append("    [dim red]* required[/dim red]")
 
     if m.get("aggressive"):
         lines += ["", "  [magenta]--aggressive unlocks[/magenta]"]

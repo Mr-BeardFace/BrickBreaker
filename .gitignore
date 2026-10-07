@@ -6,3 +6,4 @@ __pycache__/
 *.sqlite
 ~/.brickbreaker/
 .brickbreaker/
+seed_test_data.py

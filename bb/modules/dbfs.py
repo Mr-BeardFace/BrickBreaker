@@ -5,7 +5,7 @@ import posixpath
 import shlex
 
 from bb.core.db import now_iso, log_pull
-from bb.core.display import console
+from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
 
@@ -16,6 +16,8 @@ def run_list(w, conn, profile, flags):
     console.print(f"\n[bold]DBFS[/bold]  [dim]{path}[/dim]  "
                   f"[dim]depth={'unlimited' if depth < 0 else depth}[/dim]\n")
     _list_recursive(w, path, depth, 0)
+    next_step("dbfs read --path <path> --run",
+              "dbfs read --path <path> --output <file> --run")
 
 
 def _list_recursive(w, path: str, max_depth: int, current: int):
@@ -47,7 +49,7 @@ def _list_recursive(w, path: str, max_depth: int, current: int):
 def run_read(w, conn, profile, flags):
     path = flags.get("path") or flags.get("id")
     if not path:
-        path = input("DBFS path: ").strip()
+        path = input("DBFS path (from: dbfs list --run): ").strip()
     console.print(f"\n[bold]Read[/bold]  [dim]{path}[/dim]\n")
     console.print("[dim]  Note: file content is downloaded through the API[/dim]\n")
     try:
@@ -64,7 +66,7 @@ def run_read(w, conn, profile, flags):
             if len(data) < CHUNK:
                 break
         content = b"".join(buf).decode("utf-8", errors="replace")
-        console.print(content)
+        write_output(content, flags)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -294,7 +296,8 @@ COMMANDS = {
         "activity": ["data"], "type": "R", "noise": "Low",
         "prereqs": [],
         "caveats": ["Downloads file content through API — not a server-side operation"],
-        "flags": [("--path PATH", "DBFS file path")],
+        "flags": [("--path PATH", "DBFS file path"), ("--output FILE", "Save content to file")],
+        "required_flags": ["--path"],
         "fn": run_read,
     },
     "shell": {

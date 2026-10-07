@@ -3,7 +3,7 @@
 import base64
 
 from bb.core.db import now_iso, log_pull, should_use_cache
-from bb.core.display import console
+from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
 
@@ -35,7 +35,7 @@ def _walk(w, path: str, depth: int, current: int, conn, now: str):
 def run_list(w, conn, profile, flags):
     path   = flags.get("path") or "/"
     depth  = flags.get("depth", 0)
-    module = f"workspace.list:{path}"
+    module = f"workspace.list:{path}:d{depth}"
     use_cache, age = should_use_cache(conn, module, flags)
     if use_cache is None:
         console.print("[yellow]No cached data — run without --cached to pull[/yellow]")
@@ -57,18 +57,20 @@ def run_list(w, conn, profile, flags):
     count = _walk(w, path, depth, 0, conn, now)
     log_pull(conn, module, profile, count)
     conn.commit()
+    next_step("workspace export --path <path> --run",
+              "workspace export --path <path> --output <file> --run")
 
 
 def run_export(w, conn, profile, flags):
     path = flags.get("path") or flags.get("id")
     if not path:
-        path = input("Workspace path: ").strip()
+        path = input("Workspace path (from: workspace list --run): ").strip()
     console.print(f"\n[bold]Export[/bold]  [dim]{path}[/dim]\n")
     try:
         from databricks.sdk.service.workspace import ExportFormat
         result  = w.workspace.export(path=path, format=ExportFormat.SOURCE)
         content = base64.b64decode(result.content or "").decode("utf-8", errors="replace")
-        console.print(content)
+        write_output(content, flags)
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -100,17 +102,17 @@ def run_git_credentials(w, conn, profile, flags):
         t.add_column("Username", style="cyan")
         t.add_column("Provider")
         for c in creds:
-            t.add_row(str(c.credential_id), c.git_username or "?",
-                      c.git_provider.value if c.git_provider else "?")
+            provider = c.git_provider.value if hasattr(c.git_provider, "value") else (c.git_provider or "?")
+            t.add_row(str(c.credential_id), c.git_username or "?", provider)
             conn.execute(
                 "INSERT OR REPLACE INTO git_credentials VALUES (?,?,?,?)",
-                (str(c.credential_id), c.git_username,
-                 c.git_provider.value if c.git_provider else "?", now)
+                (str(c.credential_id), c.git_username, provider, now)
             )
         log_pull(conn, module, profile, len(creds))
         conn.commit()
         console.print(t)
         console.print("\n  [dim]Tokens stored in git credentials are not returned by the API[/dim]")
+        next_step("workspace repos --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -156,6 +158,8 @@ def run_repos_list(w, conn, profile, flags):
         log_pull(conn, module, profile, len(repos))
         conn.commit()
         console.print(t)
+        next_step("workspace list --path /Repos/<user> --run",
+                  "workspace export --path <path> --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -177,7 +181,8 @@ COMMANDS = {
         "activity": ["data"], "type": "R", "noise": "Low",
         "prereqs": ["Workspace path"],
         "caveats": ["Downloads file content through API — not a server-side operation"],
-        "flags": [("--path PATH", "Workspace path to export")],
+        "flags": [("--path PATH", "Workspace path to export"), ("--id PATH", "Alias for --path"), ("--output FILE", "Save content to file")],
+        "required_flags": ["--path"],
         "fn": run_export,
     },
     "git-credentials": {

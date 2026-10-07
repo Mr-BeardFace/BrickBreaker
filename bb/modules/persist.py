@@ -1,6 +1,6 @@
 """Persist module — create PATs, OBO tokens, service principals"""
 
-from bb.core.display import console
+from bb.core.display import console, next_step
 from rich import box
 from rich.table import Table
 
@@ -42,7 +42,7 @@ def run_create_obo_token(w, conn, profile, flags):
     lifetime_s   = flags.get("limit")
 
     if not app_id:
-        app_id = input("Service principal application ID: ").strip()
+        app_id = input("Service principal application ID (from: identity service-principals --run): ").strip()
     if lifetime_s == 100:
         raw = input("Lifetime seconds: ").strip()
         try:
@@ -83,7 +83,7 @@ def run_create_service_principal(w, conn, profile, flags):
     try:
         sp = w.service_principals.create(display_name=name)
         console.print(f"\n  [green]Created[/green]  ID={sp.id}  AppID={sp.application_id}")
-        console.print(f"  [dim]Create a PAT for this SP: identity tokens --run[/dim]")
+        next_step(f"persist create-obo-token --id {sp.application_id} --run")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
 
@@ -115,6 +115,7 @@ COMMANDS = {
             ("--id APP_ID", "Service principal application ID"),
             ("--limit N",   "Lifetime in seconds"),
         ],
+        "required_flags": ["--id"],
         "fn": run_create_obo_token,
     },
     "create-service-principal": {
@@ -123,6 +124,7 @@ COMMANDS = {
         "prereqs": ["Admin token recommended"],
         "caveats": ["Visible in service_principals.list() immediately"],
         "flags": [("--name TEXT", "Display name")],
+        "required_flags": ["--name"],
         "fn": run_create_service_principal,
     },
 }
