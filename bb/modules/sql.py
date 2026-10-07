@@ -186,13 +186,20 @@ def run_execute(w, conn, profile, flags):
     console.print(f"\n[bold]Execute SQL[/bold]  [dim]warehouse={wh_id}[/dim]\n")
     console.print(f"  [dim]{sql}[/dim]\n")
     try:
-        from databricks.sdk.service.sql import StatementState
+        import time as _time
         result = w.statement_execution.execute_statement(
-            statement=sql,
-            warehouse_id=wh_id,
-            wait_timeout="50s",
+            statement=sql, warehouse_id=wh_id, wait_timeout="50s",
         )
         state = result.status.state.value if result.status and result.status.state else ""
+        if state not in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
+            sid      = result.statement_id
+            deadline = _time.time() + 300
+            while _time.time() < deadline:
+                _time.sleep(5)
+                result = w.statement_execution.get_statement(statement_id=sid)
+                state  = result.status.state.value if result.status and result.status.state else ""
+                if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
+                    break
         if state == "FAILED":
             msg = result.status.error.message if result.status and result.status.error else "unknown"
             console.print(f"[red]Failed: {msg}[/red]")

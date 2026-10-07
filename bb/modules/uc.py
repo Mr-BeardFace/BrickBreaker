@@ -1,6 +1,7 @@
 """Unity Catalog module — catalogs, schemas, tables, connections, credentials, grants"""
 
 import json
+import time
 
 from bb.core.db import now_iso, log_pull, should_use_cache
 from bb.core.display import console, next_step
@@ -8,6 +9,28 @@ from bb.core.flags import limit
 from bb.core.crypto import encrypt, decrypt
 from rich import box
 from rich.table import Table
+
+
+def _exec_sql(w, sql: str, warehouse_id: str, timeout_s: int = 300):
+    """Submit a SQL statement and poll until done. Returns StatementResponse or None."""
+    r = w.statement_execution.execute_statement(
+        statement=sql,
+        warehouse_id=warehouse_id,
+        wait_timeout="50s",
+    )
+    state = r.status.state.value if r.status and r.status.state else ""
+    if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
+        return r
+    # PENDING — warehouse likely starting; poll up to timeout_s
+    sid      = r.statement_id
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        time.sleep(5)
+        r     = w.statement_execution.get_statement(statement_id=sid)
+        state = r.status.state.value if r.status and r.status.state else ""
+        if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
+            return r
+    return r  # return whatever we have at deadline
 
 
 def run_catalogs(w, conn, profile, flags):
@@ -536,11 +559,7 @@ def run_table_meta(w, conn, profile, flags):
 
         if warehouse:
             try:
-                r = w.statement_execution.execute_statement(
-                    statement=f"SELECT COUNT(*) FROM {full_name}",
-                    warehouse_id=warehouse,
-                    wait_timeout="50s",
-                )
+                r = _exec_sql(w, f"SELECT COUNT(*) FROM {full_name}", warehouse)
                 state = r.status.state.value if r.status and r.status.state else ""
                 if state == "SUCCEEDED" and r.result and r.result.data_array:
                     console.print(f"  Live Count : [yellow]{r.result.data_array[0][0]}[/yellow]")
@@ -553,11 +572,7 @@ def run_table_meta(w, conn, profile, flags):
         if warehouse and n_rows:
             console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows})[/dim]\n")
             try:
-                r = w.statement_execution.execute_statement(
-                    statement=f"SELECT * FROM {full_name} LIMIT {n_rows}",
-                    warehouse_id=warehouse,
-                    wait_timeout="50s",
-                )
+                r = _exec_sql(w, f"SELECT * FROM {full_name} LIMIT {n_rows}", warehouse)
                 state     = r.status.state.value if r.status and r.status.state else ""
                 schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
                 col_names = [c.name for c in schema]
@@ -625,11 +640,7 @@ def run_schema_meta(w, conn, profile, flags):
             ttype = tbl.table_type.value if tbl.table_type else "?"
             if warehouse:
                 try:
-                    r = w.statement_execution.execute_statement(
-                        statement=f"SELECT COUNT(*) FROM {tbl.full_name}",
-                        warehouse_id=warehouse,
-                        wait_timeout="50s",
-                    )
+                    r = _exec_sql(w, f"SELECT COUNT(*) FROM {tbl.full_name}", warehouse)
                     state   = r.status.state.value if r.status and r.status.state else ""
                     row_str = str(r.result.data_array[0][0]) if state == "SUCCEEDED" and r.result and r.result.data_array else "?"
                 except Exception:
