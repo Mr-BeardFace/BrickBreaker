@@ -186,10 +186,17 @@ def run_execute(w, conn, profile, flags):
     try:
         from databricks.sdk.service.sql import StatementState
         result = w.statement_execution.execute_statement(
-            warehouse_id=wh_id, statement=sql
-        ).result()
-        if result.status and result.status.state == StatementState.FAILED:
-            console.print(f"[red]Failed: {result.status.error.message}[/red]")
+            statement=sql,
+            warehouse_id=wh_id,
+            wait_timeout="50s",
+        )
+        state = result.status.state.value if result.status and result.status.state else ""
+        if state == "FAILED":
+            msg = result.status.error.message if result.status and result.status.error else "unknown"
+            console.print(f"[red]Failed: {msg}[/red]")
+            return
+        if state != "SUCCEEDED":
+            console.print(f"[yellow]Query ended with state: {state}[/yellow]")
             return
         schema = result.manifest.schema.columns if result.manifest and result.manifest.schema else []
         cols   = [c.name for c in schema]

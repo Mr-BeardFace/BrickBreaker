@@ -4,46 +4,79 @@ import base64
 import posixpath
 import shlex
 
-from bb.core.db import now_iso, log_pull
+from bb.core.db import now_iso, log_pull, should_use_cache
 from bb.core.display import console, write_output, next_step
 from rich import box
 from rich.table import Table
 
 
 def run_list(w, conn, profile, flags):
-    path  = flags.get("path") or "/"
-    depth = flags.get("depth", 0)
+    path   = flags.get("path") or "/"
+    depth  = flags.get("depth", 0)
+    module = f"dbfs.list:{path}:d{depth}"
+    use_cache, age = should_use_cache(conn, module, flags)
+    if use_cache is None:
+        console.print("[yellow]No cached data — run without --cached to pull[/yellow]")
+        return
+    if use_cache:
+        rows = conn.execute(
+            "SELECT * FROM dbfs_files WHERE path LIKE ? ORDER BY path",
+            (path.rstrip("/") + "%",)
+        ).fetchall()
+        console.print(f"\n[bold]DBFS[/bold]  [dim]{path}[/dim]  [dim](cached {age})[/dim]\n")
+        t = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
+        t.add_column("", min_width=2)
+        t.add_column("Path", style="cyan")
+        t.add_column("Size", justify="right", style="dim")
+        for r in rows:
+            icon = "📁" if r["is_dir"] else "📄"
+            size = _fmt_size(r["file_size"]) if not r["is_dir"] else ""
+            t.add_row(icon, r["path"], size)
+        console.print(t)
+        return
+
+    now = now_iso()
     console.print(f"\n[bold]DBFS[/bold]  [dim]{path}[/dim]  "
                   f"[dim]depth={'unlimited' if depth < 0 else depth}[/dim]\n")
-    _list_recursive(w, path, depth, 0)
+    count = _list_recursive(w, path, depth, 0, conn, now)
+    log_pull(conn, module, profile, count)
+    conn.commit()
     next_step("dbfs read --path <path> --run",
               "dbfs read --path <path> --output <file> --run")
 
 
-def _list_recursive(w, path: str, max_depth: int, current: int):
+def _list_recursive(w, path: str, max_depth: int, current: int, conn=None, now: str = "") -> int:
     try:
         items = list(w.dbfs.list(path=path))
     except Exception as e:
         console.print(f"  [red]Error: {e}[/red]")
-        return
+        return 0
 
     t = Table(box=box.SIMPLE, show_header=False, pad_edge=False)
     t.add_column("", min_width=2)
     t.add_column("Path",  style="cyan")
     t.add_column("Size",  justify="right", style="dim")
+    count = 0
     for item in items:
         indent = "  " * current
         is_dir = item.is_dir
         size   = _fmt_size(item.file_size) if not is_dir else ""
         icon   = "📁" if is_dir else "📄"
         t.add_row(f"{indent}{icon}", item.path or "?", size)
+        if conn and now:
+            conn.execute(
+                "INSERT OR REPLACE INTO dbfs_files VALUES (?,?,?,?)",
+                (item.path, int(bool(is_dir)), item.file_size or 0, now)
+            )
+        count += 1
     console.print(t)
 
     if max_depth != 0:
         for item in items:
             if item.is_dir:
                 if max_depth < 0 or current < max_depth:
-                    _list_recursive(w, item.path, max_depth, current + 1)
+                    count += _list_recursive(w, item.path, max_depth, current + 1, conn, now)
+    return count
 
 
 def run_read(w, conn, profile, flags):

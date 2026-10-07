@@ -194,6 +194,12 @@ def _init_schema(conn: sqlite3.Connection):
             config_json TEXT,
             pulled_at   TEXT
         );
+        CREATE TABLE IF NOT EXISTS dbfs_files (
+            path      TEXT PRIMARY KEY,
+            is_dir    INTEGER,
+            file_size INTEGER,
+            pulled_at TEXT
+        );
     """)
     conn.commit()
 

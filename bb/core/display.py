@@ -97,7 +97,7 @@ def show_module_info(category: str, command: str):
         lines += ["", "  [magenta]--aggressive unlocks[/magenta]"]
         lines += [f"    [magenta]→[/magenta] {a}" for a in m["aggressive"]]
 
-    lines += ["", "  [dim]Add --run to execute[/dim]"]
+    lines += ["", "  [dim]Add --run to execute  ·  --cached (skip API)  ·  --fresh (force pull)[/dim]"]
 
     console.print(Panel(
         "\n".join(lines),

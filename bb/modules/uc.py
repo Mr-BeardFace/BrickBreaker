@@ -439,7 +439,7 @@ def _pick_warehouse(w) -> str | None:
         return None
     console.print("\n  [bold]Select warehouse for row counts[/bold]")
     for i, wh in enumerate(running):
-        console.print(f"  [{i+1}] {wh.name or wh.id}  [dim]{wh.cluster_size or ''}[/dim]")
+        console.print(f"  [{i+1}] {wh.name or '?'}  [dim]{wh.cluster_size or ''}  {wh.id}[/dim]")
     raw = input(f"  Choice [1-{len(running)}] or Enter to skip: ").strip()
     if raw.isdigit() and 1 <= int(raw) <= len(running):
         return str(running[int(raw) - 1].id)
@@ -644,7 +644,15 @@ def run_temp_path_creds(w, conn, profile, flags):
         else:
             console.print(repr(creds))
     except Exception as e:
-        console.print(f"[red]Error: {e}[/red]")
+        err = str(e)
+        if "EXTERNAL USE LOCATION" in err or "does not have" in err.lower():
+            console.print(f"[yellow]Permission denied[/yellow]: {err}")
+            console.print("\n  [dim]EXTERNAL USE LOCATION is a UC privilege on the external location.[/dim]")
+            console.print("  [dim]Current identity lacks it — check grants with:[/dim]")
+            next_step("uc grants --id <external_location_name> --run",
+                      "uc external-locations --run")
+        else:
+            console.print(f"[red]Error: {e}[/red]")
 
 
 def run_temp_table_creds(w, conn, profile, flags):

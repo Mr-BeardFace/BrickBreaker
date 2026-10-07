@@ -15,34 +15,27 @@ def run_scopes(w, conn, profile, flags):
     if use_cache:
         rows = conn.execute("SELECT * FROM secrets_scopes ORDER BY name").fetchall()
         console.print(f"\n[bold]Secret Scopes[/bold]  [dim](cached {age})[/dim]\n")
-        t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-        t.add_column("Scope Name",   style="cyan")
-        t.add_column("Backend Type")
-        t.add_column("Access")
         for r in rows:
             access = r["access"] or ""
-            ac = "[green]READ[/green]" if access == "READ" else ("[red]DENIED[/red]" if access == "DENIED" else "")
-            t.add_row(r["name"], r["backend_type"] or "?", ac)
-        console.print(t)
+            ac = "  [green]READ[/green]" if access == "READ" else ("  [red]DENIED[/red]" if access == "DENIED" else "")
+            console.print(f"  [cyan]{r['name']}[/cyan]  [dim]{r['backend_type'] or '?'}[/dim]{ac}")
+        console.print()
         return
 
     console.print("\n[bold]Secret Scopes[/bold]\n")
     try:
         scopes = list(w.secrets.list_scopes())
         now    = now_iso()
-        t      = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-        t.add_column("Scope Name",   style="cyan")
-        t.add_column("Backend Type")
         for s in scopes:
             bt = s.backend_type.value if s.backend_type else "?"
-            t.add_row(s.name, bt)
+            console.print(f"  [cyan]{s.name}[/cyan]  [dim]{bt}[/dim]")
             conn.execute(
                 "INSERT OR REPLACE INTO secrets_scopes VALUES (?,?,?,?)",
                 (s.name, bt, None, now)
             )
         log_pull(conn, module, profile, len(scopes))
         conn.commit()
-        console.print(t)
+        console.print()
         next_step("secrets list --scope <name> --run",
                   "secrets all --run")
     except Exception as e:
