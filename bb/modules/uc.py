@@ -52,7 +52,7 @@ def run_catalogs(w, conn, profile, flags):
 def run_schemas(w, conn, profile, flags):
     catalog = flags.get("catalog")
     if not catalog:
-        catalog = input("Catalog name (from: uc catalogs --run): ").strip()
+        catalog = input("Catalog name (from: uc catalogs --run)  e.g. main: ").strip()
     module = f"uc.schemas:{catalog}"
     console.print(f"\n[bold]Schemas[/bold]  [dim]{catalog}[/dim]\n")
     try:
@@ -80,9 +80,9 @@ def run_tables(w, conn, profile, flags):
     catalog     = flags.get("catalog")
     schema_name = flags.get("schema")
     if not catalog:
-        catalog = input("Catalog name (from: uc catalogs --run): ").strip()
+        catalog = input("Catalog name (from: uc catalogs --run)  e.g. main: ").strip()
     if not schema_name:
-        schema_name = input("Schema name (from: uc schemas --catalog <name> --run): ").strip()
+        schema_name = input("Schema name (from: uc schemas --catalog <name> --run)  e.g. default: ").strip()
     module = f"uc.tables:{catalog}.{schema_name}"
     console.print(f"\n[bold]Tables[/bold]  [dim]{catalog}.{schema_name}[/dim]\n")
     try:
@@ -241,7 +241,7 @@ def run_connections_list(w, conn, profile, flags):
 def run_connections_get(w, conn, profile, flags):
     name = flags.get("name") or flags.get("id")
     if not name:
-        name = input("Connection name (from: uc connections --run): ").strip()
+        name = input("Connection name (from: uc connections --run)  e.g. my-snowflake-conn: ").strip()
     console.print(f"\n[bold]Connection[/bold]  [dim]{name}[/dim]\n")
     try:
         c   = w.connections.get(name=name)
@@ -407,9 +407,9 @@ def run_volumes(w, conn, profile, flags):
     catalog     = flags.get("catalog")
     schema_name = flags.get("schema")
     if not catalog:
-        catalog = input("Catalog name (from: uc catalogs --run): ").strip()
+        catalog = input("Catalog name (from: uc catalogs --run)  e.g. main: ").strip()
     if not schema_name:
-        schema_name = input("Schema name (from: uc schemas --catalog <name> --run): ").strip()
+        schema_name = input("Schema name (from: uc schemas --catalog <name> --run)  e.g. default: ").strip()
     console.print(f"\n[bold]Volumes[/bold]  [dim]{catalog}.{schema_name}[/dim]\n")
     try:
         vols = list(w.volumes.list(catalog_name=catalog, schema_name=schema_name))
@@ -488,7 +488,7 @@ def run_table_meta(w, conn, profile, flags):
     warehouse = flags.get("warehouse")
 
     if not full_name:
-        full_name = input("Table full name (from: uc tables --catalog <n> --schema <n> --run): ").strip()
+        full_name = input("Table full name (from: uc tables --catalog <n> --schema <n> --run)  e.g. main.default.my_table: ").strip()
 
     if not warehouse:
         warehouse, source = _auto_warehouse(w, hint=full_name)
@@ -556,9 +556,9 @@ def run_schema_meta(w, conn, profile, flags):
     warehouse   = flags.get("warehouse")
 
     if not catalog:
-        catalog = input("Catalog name (from: uc catalogs --run): ").strip()
+        catalog = input("Catalog name (from: uc catalogs --run)  e.g. main: ").strip()
     if not schema_name:
-        schema_name = input("Schema name (from: uc schemas --catalog <n> --run): ").strip()
+        schema_name = input("Schema name (from: uc schemas --catalog <n> --run)  e.g. default: ").strip()
 
     if not warehouse:
         warehouse, source = _auto_warehouse(w, hint=f"{catalog}.{schema_name}")
@@ -623,7 +623,7 @@ def run_schema_meta(w, conn, profile, flags):
 def run_temp_path_creds(w, conn, profile, flags):
     url = flags.get("path") or flags.get("id")
     if not url:
-        url = input("External location URL (from: uc external-locations --run): ").strip()
+        url = input("External location URL (from: uc external-locations --run)  e.g. s3://my-bucket/path/ or abfss://container@account.dfs.core.windows.net/path/: ").strip()
     console.print(f"\n[bold]Temporary Path Credentials[/bold]  [dim]{url}[/dim]\n")
     console.print("[yellow]ⓘ R-only API — no cluster required[/yellow]\n")
     try:
@@ -658,7 +658,7 @@ def run_temp_path_creds(w, conn, profile, flags):
 def run_temp_table_creds(w, conn, profile, flags):
     table_id = flags.get("id") or flags.get("name")
     if not table_id:
-        table_id = input("Table full name (from: uc tables --catalog <n> --schema <n> --run): ").strip()
+        table_id = input("Table full name (from: uc tables --catalog <n> --schema <n> --run)  e.g. main.default.my_table: ").strip()
     console.print(f"\n[bold]Temporary Table Credentials[/bold]  [dim]{table_id}[/dim]\n")
     console.print("[yellow]ⓘ Direct storage creds — bypasses Databricks audit logging[/yellow]\n")
     try:

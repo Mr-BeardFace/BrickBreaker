@@ -77,7 +77,7 @@ def run_clusters(w, conn, profile, flags):
 def run_cluster_get(w, conn, profile, flags):
     cluster_id = flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run)  e.g. 0123-456789-abc1def2: ").strip()
     console.print(f"\n[bold]Cluster Config[/bold]  [dim]{cluster_id}[/dim]\n")
     try:
         c        = w.clusters.get(cluster_id=cluster_id)
@@ -159,7 +159,7 @@ def run_init_scripts_list(w, conn, profile, flags):
 def run_init_script_get(w, conn, profile, flags):
     script_id = flags.get("id")
     if not script_id:
-        script_id = input("Script ID (from: compute init-scripts-list --run): ").strip()
+        script_id = input("Script ID (from: compute init-scripts-list --run)  e.g. ABCDEF1234567890: ").strip()
     console.print(f"\n[bold]Init Script Content[/bold]  [dim]{script_id}[/dim]\n")
     try:
         s       = w.global_init_scripts.get(script_id=script_id)
@@ -199,8 +199,8 @@ def run_execute(w, conn, profile, flags):
 
     cluster_id = flags.get("cluster") or flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
-    cmd = flags.get("sql") or input("Command: ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run)  e.g. 0123-456789-abc1def2: ").strip()
+    cmd = flags.get("sql") or input("Command (Python): ").strip()
 
     console.print(f"\n[bold]Executing on[/bold] [cyan]{cluster_id}[/cyan]\n")
     try:

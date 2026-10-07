@@ -82,7 +82,7 @@ def _list_recursive(w, path: str, max_depth: int, current: int, conn=None, now: 
 def run_read(w, conn, profile, flags):
     path = flags.get("path") or flags.get("id")
     if not path:
-        path = input("DBFS path (from: dbfs list --run): ").strip()
+        path = input("DBFS path (from: dbfs list --run)  e.g. /FileStore/ or /mnt/data/file.csv: ").strip()
     console.print(f"\n[bold]Read[/bold]  [dim]{path}[/dim]\n")
     console.print("[dim]  Note: file content is downloaded through the API[/dim]\n")
     try:

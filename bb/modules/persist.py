@@ -42,7 +42,7 @@ def run_create_obo_token(w, conn, profile, flags):
     lifetime_s   = flags.get("limit")
 
     if not app_id:
-        app_id = input("Service principal application ID (from: identity service-principals --run): ").strip()
+        app_id = input("Service principal application ID (from: identity service-principals --run)  e.g. 1234567890123456: ").strip()
     if lifetime_s == 100:
         raw = input("Lifetime seconds: ").strip()
         try:

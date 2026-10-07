@@ -57,7 +57,7 @@ def _exec_on_cluster(w, cluster_id: str, script: str):
 def _get_cluster(flags) -> str:
     cluster_id = flags.get("cluster") or flags.get("id")
     if not cluster_id:
-        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run)  e.g. 0123-456789-abc1def2: ").strip()
     return cluster_id
 
 

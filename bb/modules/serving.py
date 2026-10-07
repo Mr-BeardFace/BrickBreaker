@@ -57,7 +57,7 @@ def run_list(w, conn, profile, flags):
 def run_get(w, conn, profile, flags):
     name = flags.get("name") or flags.get("id")
     if not name:
-        name = input("Endpoint name (from: serving list --run): ").strip()
+        name = input("Endpoint name (from: serving list --run)  e.g. my-llm-endpoint: ").strip()
     console.print(f"\n[bold]Serving Endpoint Config[/bold]  [dim]{name}[/dim]\n")
     try:
         ep  = w.serving_endpoints.get(name=name)
@@ -91,9 +91,9 @@ def run_get(w, conn, profile, flags):
 def run_logs(w, conn, profile, flags):
     name = flags.get("name") or flags.get("id")
     if not name:
-        name = input("Endpoint name (from: serving list --run): ").strip()
+        name = input("Endpoint name (from: serving list --run)  e.g. my-llm-endpoint: ").strip()
     # model name defaults to first served model — user can override
-    model = flags.get("model") or flags.get("schema") or input("Served model name (from: serving get --name <n> --run, or Enter to auto-detect): ").strip()
+    model = flags.get("model") or flags.get("schema") or input("Served model name (from: serving get --name <n> --run)  e.g. my-model-1, or Enter to auto-detect: ").strip()
 
     if not model:
         try:

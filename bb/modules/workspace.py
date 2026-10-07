@@ -64,7 +64,7 @@ def run_list(w, conn, profile, flags):
 def run_export(w, conn, profile, flags):
     path = flags.get("path") or flags.get("id")
     if not path:
-        path = input("Workspace path (from: workspace list --run): ").strip()
+        path = input("Workspace path (from: workspace list --run)  e.g. /Users/user@company.com/notebook: ").strip()
     console.print(f"\n[bold]Export[/bold]  [dim]{path}[/dim]\n")
     try:
         from databricks.sdk.service.workspace import ExportFormat

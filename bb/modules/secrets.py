@@ -152,11 +152,11 @@ def run_get(w, conn, profile, flags):
     cluster_id = flags.get("cluster")
 
     if not scope:
-        scope = input("Scope (from: secrets scopes --run): ").strip()
+        scope = input("Scope (from: secrets scopes --run)  e.g. prod-api-keys: ").strip()
     if not key:
-        key = input("Key (from: secrets list --scope <scope> --run): ").strip()
+        key = input("Key (from: secrets list --scope <scope> --run)  e.g. stripe_secret_key: ").strip()
     if not cluster_id:
-        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run)  e.g. 0123-456789-abc1def2: ").strip()
 
     console.print(f"\n[bold]Secret Extract[/bold]  [dim]{scope}/{key}  cluster={cluster_id}[/dim]\n")
     try:
@@ -191,7 +191,7 @@ def run_dump(w, conn, profile, flags):
     scope_filter = flags.get("scope")
 
     if not cluster_id:
-        cluster_id = input("Cluster ID (from: compute clusters --run): ").strip()
+        cluster_id = input("Cluster ID (from: compute clusters --run)  e.g. 0123-456789-abc1def2: ").strip()
 
     console.print(f"\n[bold]Secret Dump[/bold]  [dim]cluster={cluster_id}[/dim]\n")
     try:

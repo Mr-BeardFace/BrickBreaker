@@ -69,7 +69,7 @@ def run_list(w, conn, profile, flags):
 def run_get(w, conn, profile, flags):
     job_id = flags.get("id")
     if not job_id:
-        job_id = input("Job ID (from: jobs list --run): ").strip()
+        job_id = input("Job ID (from: jobs list --run)  e.g. 123456789: ").strip()
     console.print(f"\n[bold]Job Config[/bold]  [dim]{job_id}[/dim]\n")
     try:
         j    = w.jobs.get(job_id=int(job_id))

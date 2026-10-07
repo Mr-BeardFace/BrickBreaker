@@ -110,7 +110,7 @@ def run_queries_list(w, conn, profile, flags):
 def run_queries_get(w, conn, profile, flags):
     qid = flags.get("id")
     if not qid:
-        qid = input("Query ID (from: sql queries --run): ").strip()
+        qid = input("Query ID (from: sql queries --run)  e.g. 01abc234-def5-6789-abcd-ef0123456789: ").strip()
     console.print(f"\n[bold]Saved Query[/bold]  [dim]{qid}[/dim]\n")
     try:
         q   = w.queries.get(id=qid)
@@ -176,7 +176,7 @@ def run_query_history(w, conn, profile, flags):
 def run_execute(w, conn, profile, flags):
     wh_id = flags.get("warehouse")
     if not wh_id:
-        wh_id = input("Warehouse ID (from: sql warehouses --run): ").strip()
+        wh_id = input("Warehouse ID (from: sql warehouses --run)  e.g. abc1234567890ef: ").strip()
     sql = flags.get("sql")
     if not sql:
         sql = input("SQL: ").strip()
