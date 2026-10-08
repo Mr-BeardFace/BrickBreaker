@@ -2,7 +2,7 @@
 
 from bb.modules import (
     identity, secrets, compute, jobs, workspace,
-    uc, sql, serving, dbfs, settings, imds, persist, recon, loot,
+    uc, sql, serving, dbfs, settings, imds, persist, recon, loot, attacks,
 )
 
 MODULES: dict = {
@@ -61,5 +61,9 @@ MODULES: dict = {
     "loot": {
         "description": "Aggregated high-value findings from local cache — one-stop credential review",
         "commands": loot.COMMANDS,
+    },
+    "attacks": {
+        "description": "Offensive simulation scenarios — smash & grab, exfil simulation",
+        "commands": attacks.COMMANDS,
     },
 }

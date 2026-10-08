@@ -8,7 +8,7 @@ A Databricks red team enumeration and lateral movement tool for authorized secur
 
 ## What It Does
 
-BrickBreaker enumerates Databricks workspaces across 14 attack surface areas:
+BrickBreaker enumerates Databricks workspaces across 15 attack surface areas:
 
 - **Credentials** — secret scopes, job env vars, init scripts, UC connection options, serving endpoint env vars, notebook content
 - **Cloud lateral movement** — IMDS credential extraction from running clusters (AWS STS, Azure ARM/Graph tokens), instance profiles, UC temp storage credentials (S3/ADLS)
@@ -69,7 +69,10 @@ python brickbreaker.py <module> <command> [--flags] --run
 - `--cached` reads from local SQLite cache instead of hitting the API
 - `--fresh` forces a fresh pull even if cached data is recent
 - `--aggressive` enables EXEC-tier operations (cluster code execution)
-- `--output <file>` saves content output to a file instead of printing
+- `--extended` removes truncation on large result sets (groups, tasks, IPs, rows)
+- `--simulate` submits SQL but forces `EXTERNAL_LINKS` disposition — row data never enters memory; does a Range GET (1 byte) on the first S3 chunk to log access in CloudTrail without downloading data
+- `--rows N` fetches N sample rows from a table (requires `--warehouse`)
+- `--output <file>` tees all output to a plain-text file in addition to the terminal
 - `--limit N` caps results (default 100; `0` = all)
 
 **View all modules:**
@@ -191,8 +194,8 @@ Every command is labeled with an execution tier visible in its info pane:
 | `catalogs` | R | All catalogs |
 | `schemas` | R | Schemas in a catalog (`--catalog`) |
 | `tables` | R | Tables in a schema — name, type, storage location (`--catalog`, `--schema`) |
-| `table-meta` | R | Column list and row count (`--id`; add `--rows N` to also pull N sample rows) |
-| `schema-meta` | R | All tables with column counts and row counts (`--catalog`, `--schema`) |
+| `table-meta` | R | Column list and row count (`--id`; `--rows N` pulls sample rows; `--simulate` submits query without downloading) |
+| `schema-meta` | R | All tables with column counts and row counts (`--catalog`, `--schema`; `--simulate` skips COUNT queries) |
 | `external-locations` | R | External storage locations and credential bindings |
 | `storage-credentials` | R | Storage credential objects (IAM roles / service principals) |
 | `connections` | R | Connection names and types (no credential values) |
@@ -216,7 +219,7 @@ Every command is labeled with an execution tier visible in its info pane:
 | `queries` | R | Saved queries (IDs and names) |
 | `queries-get` | R | Full saved query text (`--id`) |
 | `query-history` | R | Recent query history with user, time, status, preview |
-| `execute` | R | Run SQL against a warehouse (`--warehouse`, `--sql`) |
+| `execute` | R | Run SQL against a warehouse (`--warehouse`, `--sql`); add `--simulate` to submit without pulling data |
 
 ---
 
@@ -284,6 +287,37 @@ Read-only views over the local SQLite cache — no API calls. Run after enumerat
 > Sensitive values (job env vars, UC connection options, init script content, notebook content) are stored **encrypted at rest** using Fernet symmetric encryption. Per-profile keys live at `~/.brickbreaker/<profile>.key`.
 
 > `recon cred-hunt` writes all fetched job configs and query text to the cache, so `loot dump` reflects the full sweep without re-running individual `jobs get` commands.
+
+---
+
+### `attacks` — Offensive simulation scenarios
+
+| Command | Type | Description |
+|---------|------|-------------|
+| `smash-grab` | R | Simulate full-workspace data exfil — `SELECT *` every accessible table, no data pulled |
+
+`smash-grab` requires `--aggressive` and `--warehouse`. For each table it:
+1. Submits `SELECT *` with `EXTERNAL_LINKS` disposition — Databricks writes results to a temp S3 prefix; row data never enters memory
+2. Reads row count and column schema from the statement manifest (already in the API response)
+3. Issues a Range GET (`bytes=0-0`) on the first S3 chunk — downloads 1 byte, logs a `GetObject` in CloudTrail under the same account that ran the query
+
+The result is a correlated artifact pair: Databricks audit log entry + S3 CloudTrail entry, proving an attacker with these credentials could have exfiltrated the data.
+
+```bash
+# Full workspace
+python brickbreaker.py attacks smash-grab --warehouse <id> --aggressive --run
+
+# Narrow scope
+python brickbreaker.py attacks smash-grab --warehouse <id> --catalog main --aggressive --run
+
+# Exclude noisy system catalogs
+python brickbreaker.py attacks smash-grab --warehouse <id> \
+  --exclude-catalog system,samples --aggressive --run
+
+# Exclude by schema as well
+python brickbreaker.py attacks smash-grab --warehouse <id> \
+  --exclude-catalog system --exclude-schema information_schema --aggressive --run
+```
 
 ---
 
@@ -392,6 +426,11 @@ python brickbreaker.py uc temp-table-creds --id catalog.schema.table --run
 
 # 9. Assess persistence options
 python brickbreaker.py recon persist-check --run
+
+# 10. Smash & grab simulation — proves data exfil without pulling data
+python brickbreaker.py attacks smash-grab --warehouse <warehouse_id> \
+  --exclude-catalog system,samples --aggressive --output smash-grab.txt --run
+# Result: Databricks audit log + S3 CloudTrail GetObject entries proving access
 ```
 
 ---

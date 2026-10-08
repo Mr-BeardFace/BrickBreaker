@@ -5,18 +5,20 @@ _FLAGS_WITH_VALUES = {
     "--limit", "--depth", "--id", "--path", "--warehouse",
     "--catalog", "--schema", "--name", "--sql", "--cluster",
     "--output", "--model", "--rows",
+    "--exclude-catalog", "--exclude-schema",
 }
 
 
 def parse_flags(args: list) -> dict:
     flags = {
         "run": False, "fresh": False, "cached": False,
-        "aggressive": False, "extended": False,
+        "aggressive": False, "extended": False, "simulate": False,
         "profile": None, "host": None, "token": None,
         "filter": None, "scope": None, "id": None,
         "path": None, "warehouse": None, "catalog": None,
         "schema": None, "name": None, "sql": None,
         "cluster": None, "output": None, "model": None,
+        "exclude_catalog": None, "exclude_schema": None,
         "limit": 100, "depth": 0, "rows": None,
     }
     i = 0

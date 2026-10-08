@@ -183,13 +183,16 @@ def run_execute(w, conn, profile, flags):
     if not sql:
         sql = input("SQL: ").strip()
 
-    console.print(f"\n[bold]Execute SQL[/bold]  [dim]warehouse={wh_id}[/dim]\n")
+    simulate = flags.get("simulate", False)
+    console.print(f"\n[bold]Execute SQL{'  [simulate]' if simulate else ''}[/bold]  [dim]warehouse={wh_id}[/dim]\n")
     console.print(f"  [dim]{sql}[/dim]\n")
     try:
-        import time as _time
-        result = w.statement_execution.execute_statement(
-            statement=sql, warehouse_id=wh_id, wait_timeout="50s",
-        )
+        import time as _time, urllib.request
+        exec_kwargs = dict(statement=sql, warehouse_id=wh_id, wait_timeout="50s")
+        if simulate:
+            from databricks.sdk.service.sql import Disposition
+            exec_kwargs["disposition"] = Disposition.EXTERNAL_LINKS
+        result = w.statement_execution.execute_statement(**exec_kwargs)
         state = result.status.state.value if result.status and result.status.state else ""
         if state not in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
             sid      = result.statement_id
@@ -209,7 +212,36 @@ def run_execute(w, conn, profile, flags):
             return
         schema = result.manifest.schema.columns if result.manifest and result.manifest.schema else []
         cols   = [c.name for c in schema]
-        rows   = result.result.data_array if result.result and result.result.data_array else []
+
+        if simulate:
+            total = getattr(result.manifest, "total_row_count", None) if result.manifest else None
+            console.print(f"  State: SUCCEEDED  Columns: {len(cols)}  Rows: {total or '?'}")
+            if cols:
+                console.print(f"  [dim]{', '.join(cols[:10])}{'...' if len(cols) > 10 else ''}[/dim]")
+            links = (getattr(result.result, "external_links", None) or []) if result.result else []
+            if links:
+                try:
+                    req = urllib.request.Request(links[0].external_link)
+                    req.add_header("Range", "bytes=0-0")
+                    with urllib.request.urlopen(req) as resp:
+                        resp.read()
+                        console.print(f"\n  [dim]{len(links)} chunk(s) on S3  [green]S3 {resp.status}[/green] — range GET logged, data not pulled[/dim]")
+                except Exception as ex:
+                    console.print(f"\n  [dim]{len(links)} chunk(s) on S3  [red]S3 error: {ex}[/red][/dim]")
+            elif result.result and result.result.data_array:
+                console.print(f"  [dim]Inline result ({len(result.result.data_array)} row(s) already in response — not displayed)[/dim]")
+            return
+
+        if result.result and result.result.data_array:
+            rows = result.result.data_array
+        else:
+            rows = []
+            for link in (getattr(result.result, "external_links", None) if result.result else []) or []:
+                try:
+                    with urllib.request.urlopen(link.external_link) as resp:
+                        rows.extend(json.loads(resp.read().decode()))
+                except Exception:
+                    pass
 
         if cols:
             t = Table(box=box.SIMPLE, show_header=True, pad_edge=False)

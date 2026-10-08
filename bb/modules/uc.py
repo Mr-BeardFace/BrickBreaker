@@ -1,36 +1,15 @@
 """Unity Catalog module — catalogs, schemas, tables, connections, credentials, grants"""
 
 import json
-import time
+import urllib.request
 
 from bb.core.db import now_iso, log_pull, should_use_cache
 from bb.core.display import console, next_step
 from bb.core.flags import limit
 from bb.core.crypto import encrypt, decrypt
+from bb.core.sql_exec import exec_sql as _exec_sql, get_rows as _get_rows
 from rich import box
 from rich.table import Table
-
-
-def _exec_sql(w, sql: str, warehouse_id: str, timeout_s: int = 300):
-    """Submit a SQL statement and poll until done. Returns StatementResponse or None."""
-    r = w.statement_execution.execute_statement(
-        statement=sql,
-        warehouse_id=warehouse_id,
-        wait_timeout="50s",
-    )
-    state = r.status.state.value if r.status and r.status.state else ""
-    if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
-        return r
-    # PENDING — warehouse likely starting; poll up to timeout_s
-    sid      = r.statement_id
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        time.sleep(5)
-        r     = w.statement_execution.get_statement(statement_id=sid)
-        state = r.status.state.value if r.status and r.status.state else ""
-        if state in ("SUCCEEDED", "FAILED", "CANCELED", "CLOSED"):
-            return r
-    return r  # return whatever we have at deadline
 
 
 def run_catalogs(w, conn, profile, flags):
@@ -561,31 +540,57 @@ def run_table_meta(w, conn, profile, flags):
             try:
                 r = _exec_sql(w, f"SELECT COUNT(*) FROM {full_name}", warehouse)
                 state = r.status.state.value if r.status and r.status.state else ""
-                if state == "SUCCEEDED" and r.result and r.result.data_array:
-                    console.print(f"  Live Count : [yellow]{r.result.data_array[0][0]}[/yellow]")
+                if state == "SUCCEEDED":
+                    cnt_rows = _get_rows(r)
+                    if cnt_rows:
+                        console.print(f"  Live Count : [yellow]{cnt_rows[0][0]}[/yellow]")
                 elif state not in ("SUCCEEDED", ""):
                     console.print(f"  [yellow]Row count query {state.lower()}[/yellow]")
             except Exception as e:
                 console.print(f"  [red]Row count error: {e}[/red]")
 
         n_rows = flags.get("rows")
+        simulate = flags.get("simulate", False)
         if warehouse and n_rows:
-            console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows})[/dim]\n")
+            console.print(f"\n[bold]Sample Rows[/bold]  [dim](LIMIT {n_rows}{'  [simulate]' if simulate else ''})[/dim]\n")
             try:
-                r = _exec_sql(w, f"SELECT * FROM {full_name} LIMIT {n_rows}", warehouse)
+                if simulate:
+                    from databricks.sdk.service.sql import Disposition
+                    _disp = Disposition.EXTERNAL_LINKS
+                else:
+                    _disp = None
+                r         = _exec_sql(w, f"SELECT * FROM {full_name} LIMIT {n_rows}", warehouse, disposition=_disp)
                 state     = r.status.state.value if r.status and r.status.state else ""
                 schema    = r.manifest.schema.columns if r.manifest and r.manifest.schema else []
                 col_names = [c.name for c in schema]
-                rows      = r.result.data_array if state == "SUCCEEDED" and r.result and r.result.data_array else []
-                if col_names:
-                    t2 = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-                    for cn in col_names:
-                        t2.add_column(cn, style="cyan")
-                    for row in rows:
-                        t2.add_row(*[str(v) if v is not None else "" for v in row])
-                    console.print(t2)
+                if simulate:
+                    total     = getattr(r.manifest, "total_row_count", None) if r.manifest else None
+                    console.print(f"  State: SUCCEEDED  Columns: {len(col_names)}  Rows: {total or '?'}")
+                    if col_names:
+                        console.print(f"  [dim]{', '.join(col_names[:10])}{'...' if len(col_names) > 10 else ''}[/dim]")
+                    links = (getattr(r.result, "external_links", None) or []) if r.result else []
+                    if links:
+                        try:
+                            req = urllib.request.Request(links[0].external_link)
+                            req.add_header("Range", "bytes=0-0")
+                            with urllib.request.urlopen(req) as resp:
+                                resp.read()
+                                console.print(f"  [dim]{len(links)} chunk(s) on S3  [green]S3 {resp.status}[/green] — range GET logged, data not pulled[/dim]")
+                        except Exception as ex:
+                            console.print(f"  [dim]{len(links)} chunk(s) on S3  [red]S3 error: {ex}[/red][/dim]")
+                    elif r.result and r.result.data_array:
+                        console.print(f"  [dim]Inline result ({len(r.result.data_array)} row(s) already in response — not displayed)[/dim]")
                 else:
-                    console.print("[dim](no rows)[/dim]")
+                    rows = _get_rows(r) if state == "SUCCEEDED" else []
+                    if col_names:
+                        t2 = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+                        for cn in col_names:
+                            t2.add_column(cn, style="cyan")
+                        for row in rows:
+                            t2.add_row(*[str(v) if v is not None else "" for v in row])
+                        console.print(t2)
+                    else:
+                        console.print("[dim](no rows)[/dim]")
             except Exception as e:
                 console.print(f"  [red]Sample error: {e}[/red]")
         elif n_rows and not warehouse:
@@ -639,12 +644,16 @@ def run_schema_meta(w, conn, profile, flags):
                 col_cnt, row_str = "?", ""
             ttype = tbl.table_type.value if tbl.table_type else "?"
             if warehouse:
-                try:
-                    r = _exec_sql(w, f"SELECT COUNT(*) FROM {tbl.full_name}", warehouse)
-                    state   = r.status.state.value if r.status and r.status.state else ""
-                    row_str = str(r.result.data_array[0][0]) if state == "SUCCEEDED" and r.result and r.result.data_array else "?"
-                except Exception:
-                    row_str = "[red]error[/red]"
+                if flags.get("simulate", False):
+                    row_str = "[dim](simulate)[/dim]"
+                else:
+                    try:
+                        r = _exec_sql(w, f"SELECT COUNT(*) FROM {tbl.full_name}", warehouse)
+                        state   = r.status.state.value if r.status and r.status.state else ""
+                        cr      = _get_rows(r) if state == "SUCCEEDED" else []
+                        row_str = str(cr[0][0]) if cr else "?"
+                    except Exception:
+                        row_str = "[red]error[/red]"
             t.add_row(tbl.name or "?", ttype, col_cnt, row_str)
 
         console.print(t)
