@@ -811,8 +811,16 @@ COMMANDS = {
         "prereqs": [],
         "caveats": ["--name <principal> is R* — iterates all catalogs locally"],
         "flags": [
-            ("--id OBJECT",     "Object full name — returns all grants on it"),
+            ("--id OBJECT",      "Object full name — returns all grants on it"),
             ("--name PRINCIPAL", "Principal name — returns all objects they have access to (R*)"),
+        ],
+        "examples": [
+            "uc grants --id main --run                          (catalog)",
+            "uc grants --id main.sales --run                    (schema)",
+            "uc grants --id main.sales.transactions --run       (table)",
+            "uc grants --id my-s3-location --run                (external location)",
+            "uc grants --name user@corp.com --run               (all grants to a user)",
+            "uc grants --name my-service-principal --run        (all grants to an SP)",
         ],
         "fn": run_grants,
     },
@@ -849,6 +857,12 @@ COMMANDS = {
             ("--rows N",        "Fetch N sample rows — omit to skip data query entirely"),
         ],
         "required_flags": ["--id"],
+        "examples": [
+            "uc table-meta --id main.sales.transactions --run",
+            "uc table-meta --id main.sales.transactions --warehouse abc123 --run",
+            "uc table-meta --id main.sales.transactions --warehouse abc123 --rows 10 --run",
+            "uc table-meta --id main.sales.transactions --warehouse abc123 --rows 10 --simulate --run",
+        ],
         "fn": run_table_meta,
     },
     "schema-meta": {
@@ -863,6 +877,11 @@ COMMANDS = {
             ("--warehouse ID",  "Warehouse ID for row counts (optional)"),
         ],
         "required_flags": ["--catalog", "--schema"],
+        "examples": [
+            "uc schema-meta --catalog main --schema sales --run",
+            "uc schema-meta --catalog main --schema sales --warehouse abc123 --run",
+            "uc schema-meta --catalog main --schema sales --warehouse abc123 --simulate --run",
+        ],
         "fn": run_schema_meta,
     },
     "temp-path-creds": {
@@ -872,6 +891,10 @@ COMMANDS = {
         "caveats": ["Returns actual cloud credentials without IMDS or cluster access"],
         "flags": [("--path URL", "External location URL (s3:// or abfss://)"), ("--id URL", "Alias for --path")],
         "required_flags": ["--path"],
+        "examples": [
+            "uc temp-path-creds --path s3://my-bucket/path/ --run",
+            "uc temp-path-creds --path abfss://container@account.dfs.core.windows.net/path/ --run",
+        ],
         "fn": run_temp_path_creds,
     },
     "temp-table-creds": {
@@ -884,6 +907,9 @@ COMMANDS = {
         ],
         "flags": [("--id TABLE", "Table full name (catalog.schema.table)"), ("--name TABLE", "Alias for --id")],
         "required_flags": ["--id"],
+        "examples": [
+            "uc temp-table-creds --id main.sales.transactions --run",
+        ],
         "fn": run_temp_table_creds,
     },
 }

@@ -136,6 +136,12 @@ COMMANDS = {
             ("--exclude-schema CSV",  "Comma-separated schema names to skip"),
         ],
         "required_flags": ["--warehouse"],
+        "examples": [
+            "attacks smash-grab --warehouse abc123 --aggressive --run",
+            "attacks smash-grab --warehouse abc123 --catalog main --aggressive --run",
+            "attacks smash-grab --warehouse abc123 --exclude-catalog system,samples --aggressive --run",
+            "attacks smash-grab --warehouse abc123 --exclude-catalog system --exclude-schema information_schema --aggressive --output grab.txt --run",
+        ],
         "aggressive": [
             "Submits SELECT * per accessible table across all catalogs",
             "Every query visible in warehouse history and audit logs",

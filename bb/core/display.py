@@ -134,6 +134,10 @@ def show_module_info(category: str, command: str):
         lines += ["", "  [magenta]--aggressive unlocks[/magenta]"]
         lines += [f"    [magenta]→[/magenta] {a}" for a in m["aggressive"]]
 
+    if m.get("examples"):
+        lines += ["", "  [cyan]Examples[/cyan]"]
+        lines += [f"    [dim]{e}[/dim]" for e in m["examples"]]
+
     lines += ["", "  [dim]Add --run to execute  ·  --cached  ·  --fresh  ·  --extended  ·  --output <file>[/dim]"]
 
     console.print(Panel(

@@ -308,6 +308,12 @@ COMMANDS = {
             ("--sql TEXT",     "SQL statement (prompts if omitted)"),
         ],
         "required_flags": ["--warehouse"],
+        "examples": [
+            "sql execute --warehouse abc123 --sql \"SELECT current_user()\" --run",
+            "sql execute --warehouse abc123 --sql \"SELECT * FROM main.sales.transactions LIMIT 100\" --run",
+            "sql execute --warehouse abc123 --sql \"SELECT * FROM main.sales.transactions\" --simulate --run",
+            "sql execute --warehouse abc123 --sql \"SHOW GRANTS ON CATALOG main\" --run",
+        ],
         "fn": run_execute,
     },
 }
